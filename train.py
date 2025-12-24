@@ -29,7 +29,7 @@ with open(HERE / "config.yaml", "r") as f:
 
 # hyperparams
 d = int(config["model"]["d_model"])
-epochs = 5
+epochs = 20
 k = 5
 lr = 1e-3
 steps_per_epoch = 100_000

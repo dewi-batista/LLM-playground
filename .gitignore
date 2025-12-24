@@ -1,7 +1,7 @@
 text8.txt
 
 *DS_store
-*.pt
+*.ckpt
 *.pyc
 *.pyo
 
