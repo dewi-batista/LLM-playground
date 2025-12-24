@@ -13,11 +13,11 @@ from tqdm import tqdm
 HERE = Path(__file__).resolve().parent
 
 # for text
-with open(HERE / "text8.txt") as f:
+with open(HERE / "./data/text8.txt") as f:
     corpus_text = f.read().split()
 
 # for vocab
-with open(HERE / "vocabulary.json") as f:
+with open(HERE / "./data/vocabulary.json") as f:
     vocab = json.load(f)
 
 # for config
