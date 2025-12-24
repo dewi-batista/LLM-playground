@@ -1,7 +1,9 @@
-*DS_store
 text8.txt
-checkpoints/*.pt
-__pycache__/
+
+*DS_store
+*.pt
 *.pyc
 *.pyo
+
+__pycache__/
 .venv/
