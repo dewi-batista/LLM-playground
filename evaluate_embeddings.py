@@ -1,16 +1,15 @@
-import json
 from pathlib import Path
 
+import json
 import torch
 import torch.nn.functional as F
 
 HERE = Path(__file__).resolve().parent
 
-VOCAB_PATH = HERE / "vocabulary.json"
+VOCAB_PATH = HERE / "./data/vocabulary.json"
 CHECKPOINT_PATH = HERE / "w2v.pt"  # produced by train.py
 WHICH = "E"  # "E", "U", or "sum"
 TOPK = 10
-
 
 def load_vocab(vocab_path: Path):
     vocab = json.loads(vocab_path.read_text())
@@ -24,7 +23,6 @@ def load_vocab(vocab_path: Path):
         index_to_token[idx] = token
 
     return token_to_index, index_to_token
-
 
 def load_embeddings(checkpoint_path: Path, which: str):
     ckpt = torch.load(checkpoint_path, map_location="cpu")
@@ -42,14 +40,12 @@ def load_embeddings(checkpoint_path: Path, which: str):
 
     return F.normalize(W, dim=1)
 
-
 def most_similar(word: str, W, token_to_index, index_to_token, topk: int):
     idx = token_to_index[word]
     sims = torch.mv(W, W[idx])
     sims[idx] = float("-inf")
     values, indices = torch.topk(sims, k=topk)
     return [(index_to_token[int(i)], float(v)) for v, i in zip(values, indices)]
-
 
 def analogy(a: str, b: str, c: str, W, token_to_index, index_to_token, topk: int):
     vec = W[token_to_index[b]] - W[token_to_index[a]] + W[token_to_index[c]]
@@ -60,7 +56,6 @@ def analogy(a: str, b: str, c: str, W, token_to_index, index_to_token, topk: int
         sims[token_to_index[w]] = float("-inf")
     values, indices = torch.topk(sims, k=topk)
     return [(index_to_token[int(i)], float(v)) for v, i in zip(values, indices)]
-
 
 token_to_index, index_to_token = load_vocab(VOCAB_PATH)
 W = load_embeddings(CHECKPOINT_PATH, which=WHICH)
@@ -100,4 +95,3 @@ for a, b, c, expected in analogies:
     preds = analogy(a, b, c, W, token_to_index, index_to_token, topk=TOPK)
     pred_str = ", ".join(f"{w} ({s:.3f})" for w, s in preds)
     print(f"- {b} - {a} + {c} = {expected}: {pred_str}")
-
