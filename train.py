@@ -1,5 +1,6 @@
 from pathlib import Path
 from random import randint
+from tqdm import tqdm
 
 import json
 import numpy as np
@@ -8,9 +9,10 @@ import torch.nn as nn
 import torch.nn.functional as F
 import torch.optim as optim
 import yaml
-from tqdm import tqdm
 
 HERE = Path(__file__).resolve().parent
+
+device = torch.device("cuda") if torch.cuda.is_available() else torch.device("cpu")
 
 # for text
 with open(HERE / "./data/text8.txt") as f:
@@ -47,7 +49,7 @@ def neg_sampling_loss(u, v, U):
     # TODO: ensure that neg_indeces doesn't include the index of the context word
     neg_indeces = np.random.choice(V, size=k, p=neg_probs)
     for neg_idx in neg_indeces:
-        loss -= F.logsigmoid(-torch.dot(u, U(torch.tensor(int(neg_idx), dtype=torch.long))))
+        loss -= F.logsigmoid(-torch.dot(u, U(torch.tensor(int(neg_idx), dtype=torch.long, device=device))))
     
     return loss
 
@@ -55,8 +57,8 @@ def neg_sampling_loss(u, v, U):
 indeces_corpus_to_token = [int(vocab[word]["index"]) for word in corpus_text]
 corpus_len = len(indeces_corpus_to_token)
 
-E = nn.Embedding(V, d)
-U = nn.Embedding(V, d)
+E = nn.Embedding(V, d).to(device)
+U = nn.Embedding(V, d).to(device)
 optimizer = optim.Adam(list(E.parameters()) + list(U.parameters()), lr=lr)
 for epoch in range(epochs):
     total_loss = 0.0
@@ -74,8 +76,8 @@ for epoch in range(epochs):
 
         optimizer.zero_grad()
 
-        emb_center = E(torch.tensor(center_idx, dtype=torch.long))
-        emb_contxt = U(torch.tensor(context_idx, dtype=torch.long))
+        emb_center = E(torch.tensor(center_idx, dtype=torch.long, device=device))
+        emb_contxt = U(torch.tensor(context_idx, dtype=torch.long, device=device))
 
         loss = neg_sampling_loss(emb_center, emb_contxt, U)
         loss.backward()
