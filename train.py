@@ -34,7 +34,6 @@ epochs = 20
 k = 5
 lr = 1e-3
 steps_per_epoch = 100_000
-
 window = 3
 
 # other hyperparams
@@ -53,10 +52,14 @@ for word, info in vocab.items():
     neg_probs[int(info["index"])] = float(info["neg_prob"])
 neg_probs /= neg_probs.sum()
 
+# TODO: subsampling frequent words + randomize window size per center (both
+# help a lot on text8)
+
 def neg_sampling_loss(u, v, U):
     loss = -F.logsigmoid(torch.dot(u, v))
     
     # TODO: ensure that neg_indeces doesn't include the index of the context word
+    # TODO: sample using torch.multinomial to remain on GPU
     neg_indeces = np.random.choice(V, size=k, p=neg_probs)
     for neg_idx in neg_indeces:
         loss -= F.logsigmoid(-torch.dot(u, U(torch.tensor(int(neg_idx), dtype=torch.long, device=device))))
@@ -72,7 +75,9 @@ corpus_len = len(indeces_corpus_to_token)
 # epochs * steps_per_epoch optimisation steps. Despite this, epochs are
 # kept for the convenience checkpointing loss, parameters, etc.
 
-# TODO: save optimiser state so that training can take off where it left off
+# TODO: save optimiser state and hyperparams so that training can take off
+# where it left off
+# TODO: implement batch learning + other vectorisation
 E = nn.Embedding(V, d).to(device)
 U = nn.Embedding(V, d).to(device)
 optimizer = optim.Adam(list(E.parameters()) + list(U.parameters()), lr=lr)
