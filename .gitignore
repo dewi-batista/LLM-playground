@@ -4,6 +4,7 @@ text8.txt
 *.pt
 *.pyc
 *.pyo
+*.sh
 
 __pycache__/
 .venv/
