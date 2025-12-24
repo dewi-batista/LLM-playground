@@ -1,3 +1,6 @@
 *DS_store
 text8.txt
 checkpoints/*.pt
+__pycache__/
+*.pyc
+*.pyo
