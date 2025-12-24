@@ -1,8 +1,10 @@
-## setup new virtual environment
+####==== setup new virtual environment
 # python3.12 -m venv .venv
-# pip freeze > requirements.txt
+# pip install pipreqs
+# pip freeze > requirements.txt
+# pipreqs . --force --ignore .venv
 
-## source the virtual environment
+####==== source virtual environment
 # source .vens/.start.sh
 
 module load Python/3.12.3
