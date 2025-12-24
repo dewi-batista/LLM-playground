@@ -38,7 +38,7 @@ steps_per_epoch = 100_000
 window = 3
 
 # other hyperparams
-log_every = 1000
+log_every = 1_000
 V = len(vocab)
 
 # config for storing model params
