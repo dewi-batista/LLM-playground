@@ -1,3 +1,4 @@
+from datetime import datetime
 from pathlib import Path
 from random import randint
 from tqdm import tqdm
@@ -35,7 +36,10 @@ steps_per_epoch = 100_000
 V = len(vocab)
 window = 3
 log_every = 1000
-checkpoint_path = HERE / "w2v.pt"
+models_dir = HERE / "models"
+models_dir.mkdir(parents=True, exist_ok=True)
+run_timestamp = datetime.now().strftime("%Y%m%d%H%M%S")
+checkpoint_path = models_dir / f"{run_timestamp}.ckpt"
 
 # for probabilities pertaining to negative indices
 neg_probs = np.zeros(V, dtype=np.float64)

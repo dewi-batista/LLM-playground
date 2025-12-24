@@ -1,15 +1,31 @@
 from pathlib import Path
 
 import json
+import sys
 import torch
 import torch.nn.functional as F
 
 HERE = Path(__file__).resolve().parent
 
 VOCAB_PATH = HERE / "./data/vocabulary.json"
-CHECKPOINT_PATH = HERE / "w2v.pt"  # produced by train.py
+MODELS_DIR = HERE / "models"  # produced by train.py
 WHICH = "E"  # "E", "U", or "sum"
 TOPK = 10
+
+def latest_checkpoint(models_dir: Path) -> Path:
+    candidates = [p for p in models_dir.glob("*.ckpt") if p.is_file() and len(p.stem) == 14 and p.stem.isdigit()]
+    if not candidates:
+        raise FileNotFoundError(f"no timestamped checkpoints found in {models_dir} (expected YYYYMMDDHHMMSS.ckpt)")
+    return max(candidates, key=lambda p: p.stem)
+
+def resolve_checkpoint_arg(arg: str) -> Path:
+    path = Path(arg)
+    if path.is_absolute() or path.exists():
+        return path
+    alt = HERE / path
+    if alt.exists():
+        return alt
+    return path
 
 def load_vocab(vocab_path: Path):
     vocab = json.loads(vocab_path.read_text())
@@ -58,7 +74,15 @@ def analogy(a: str, b: str, c: str, W, token_to_index, index_to_token, topk: int
     return [(index_to_token[int(i)], float(v)) for v, i in zip(values, indices)]
 
 token_to_index, index_to_token = load_vocab(VOCAB_PATH)
-W = load_embeddings(CHECKPOINT_PATH, which=WHICH)
+if len(sys.argv) >= 2 and sys.argv[1] in {"-h", "--help"}:
+    print(f"usage: python {Path(__file__).name} [checkpoint_path]")
+    raise SystemExit(0)
+
+checkpoint_path = (
+    resolve_checkpoint_arg(sys.argv[1]) if len(sys.argv) >= 2 else latest_checkpoint(MODELS_DIR)
+)
+print(f"Using checkpoint: {checkpoint_path}")
+W = load_embeddings(checkpoint_path, which=WHICH)
 
 words = [
     "king",
