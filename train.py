@@ -13,6 +13,7 @@ import yaml
 
 HERE = Path(__file__).resolve().parent
 
+# have read recently about including "mps" for applie products but my m1 macbook air blows lol
 device = torch.device("cuda") if torch.cuda.is_available() else torch.device("cpu")
 
 # for text
@@ -27,15 +28,20 @@ with open(HERE / "./data/vocabulary.json") as f:
 with open(HERE / "config.yaml", "r") as f:
     config = yaml.safe_load(f)
 
-# hyperparams
+# model hyperparams
 d = int(config["model"]["d_model"])
 epochs = 20
 k = 5
 lr = 1e-3
 steps_per_epoch = 100_000
-V = len(vocab)
+
 window = 3
+
+# other hyperparams
 log_every = 1000
+V = len(vocab)
+
+# config for storing model params
 models_dir = HERE / "models"
 models_dir.mkdir(parents=True, exist_ok=True)
 run_timestamp = datetime.now().strftime("%Y%m%d%H%M%S")
@@ -61,6 +67,12 @@ def neg_sampling_loss(u, v, U):
 indeces_corpus_to_token = [int(vocab[word]["index"]) for word in corpus_text]
 corpus_len = len(indeces_corpus_to_token)
 
+# NOTE: Epochs aren't actually needed here as there's no fixed dataset to
+# iterate over. What's implemented is entirely equivalent to instead performing
+# epochs * steps_per_epoch optimisation steps. Despite this, epochs are
+# kept for the convenience checkpointing loss, parameters, etc.
+
+# TODO: save optimiser state so that training can take off where it left off
 E = nn.Embedding(V, d).to(device)
 U = nn.Embedding(V, d).to(device)
 optimizer = optim.Adam(list(E.parameters()) + list(U.parameters()), lr=lr)
