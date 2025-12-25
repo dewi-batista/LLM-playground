@@ -40,8 +40,14 @@ def load_vocab(vocab_path: Path):
 
     return token_to_index, index_to_token
 
-def load_embeddings(checkpoint_path: Path, which: str):
-    ckpt = torch.load(checkpoint_path, map_location="cpu", weights_only=False)
+def load_vocab_from_ckpt(ckpt, vocab_path: Path):
+    if "index_to_token" in ckpt:
+        index_to_token = ckpt["index_to_token"]
+        token_to_index = {t: i for i, t in enumerate(index_to_token)}
+        return token_to_index, index_to_token
+    return load_vocab(vocab_path)
+
+def load_embeddings(ckpt, which: str):
     E = ckpt["E_state_dict"]["weight"]
     U = ckpt["U_state_dict"]["weight"]
 
@@ -107,7 +113,6 @@ def parse_expression(tokens, token_to_index, W):
     return F.normalize(vec, dim=0), used
 
 
-token_to_index, index_to_token = load_vocab(VOCAB_PATH)
 if len(sys.argv) >= 2 and sys.argv[1] in {"-h", "--help"}:
     print(f"usage: python {Path(__file__).name} [checkpoint_path] [word ...]")
     print(f"   or: python {Path(__file__).name} [checkpoint_path] word - word + word")
@@ -124,7 +129,9 @@ else:
     query_words = args
 
 print(f"Using checkpoint: {checkpoint_path}")
-W = load_embeddings(checkpoint_path, which=WHICH)
+ckpt = torch.load(checkpoint_path, map_location="cpu", weights_only=False)
+token_to_index, index_to_token = load_vocab_from_ckpt(ckpt, VOCAB_PATH)
+W = load_embeddings(ckpt, which=WHICH)
 
 if query_words:
     if any(t in {"+", "-"} for t in query_words) or (len(query_words) == 1 and any(ch in query_words[0] for ch in "+-")):

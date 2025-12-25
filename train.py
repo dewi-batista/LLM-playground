@@ -1,5 +1,3 @@
-# TODO: prune vocab, set a min count
-# TODO: LR decay (stop when LR dissapears)
 # TODO: hyperparameter tuning; lr, d, k, subsample_t, min_count
 
 from datetime import datetime
@@ -17,7 +15,8 @@ import yaml
 
 HERE = Path(__file__).resolve().parent
 
-# have read recently about including "mps" for applie products but my m1 macbook air blows lol
+# NOTE: I learned recently of an "mps" device which some Apple MacBooks have.
+# Perhaps worth adding in future (my M1 MacBook Air blows).
 device = torch.device("cuda") if torch.cuda.is_available() else torch.device("cpu")
 
 # for text
@@ -39,12 +38,20 @@ epochs = 1_000
 k = 5
 lr = 1e-3
 steps_per_epoch = 100_000
+total_steps = epochs * steps_per_epoch
 window = 3
 subsample_t = 1e-5
+min_count = 5
 
 # other hyperparams
 log_every = 1_000
-V = len(vocab)
+
+# prune vocab
+vocab_keep = [(int(info["index"]), word) for word, info in vocab.items() if int(info["count"]) >= min_count]
+vocab_keep.sort(key=lambda x: x[0])
+index_to_token = [word for _, word in vocab_keep]
+token_to_index = {word: i for i, word in enumerate(index_to_token)}
+V = len(index_to_token)
 
 # config for storing model params
 models_dir = HERE / "models"
@@ -69,8 +76,8 @@ else:
 # for probabilities pertaining to negative indices
 neg_probs = np.zeros(V, dtype=np.float64)
 counts = np.zeros(V, dtype=np.int64)
-for word, info in vocab.items():
-    idx = int(info["index"])
+for idx, word in enumerate(index_to_token):
+    info = vocab[word]
     neg_probs[idx] = float(info["neg_prob"])
     counts[idx] = int(info["count"])
 neg_probs /= neg_probs.sum()
@@ -102,20 +109,13 @@ def neg_sampling_loss(u, v, U, context_idx):
 
     return torch.mean(loss)
 
-# to go straight from index in text8.txt to token index
-indeces_corpus_to_token = np.array(
-    [int(vocab[word]["index"]) for word in corpus_text], dtype=np.int32
-)
+# to go straight from index in text8.txt to token index according to vocabulary
+indeces_corpus_to_token = np.array([token_to_index[word] for word in corpus_text if word in token_to_index], dtype=np.int32)
 subsample_seed = int(checkpoint_path.stem) % (2**32 - 1) if checkpoint_path.stem.isdigit() else 0
 subsample_rng = np.random.RandomState(subsample_seed)
 subsample_mask = subsample_rng.random_sample(size=len(indeces_corpus_to_token)) < subsample_keep_probs[indeces_corpus_to_token]
 indeces_corpus_to_token = indeces_corpus_to_token[subsample_mask]
 corpus_len = len(indeces_corpus_to_token)
-
-# NOTE: Epochs aren't actually needed here as there's no fixed dataset to
-# iterate over. What's implemented is entirely equivalent to instead performing
-# epochs * steps_per_epoch optimisation steps. Despite this, epochs are kept
-# for the convenience checkpointing loss, parameters, etc.
 
 E = nn.Embedding(V, d).to(device)
 U = nn.Embedding(V, d).to(device)
@@ -135,10 +135,19 @@ if RESUME_FROM is not None:
         torch.cuda.set_rng_state_all([s.cpu() for s in ckpt["rng_state_cuda"]])
     tqdm.write(f"resuming from: {checkpoint_path} (epoch={start_epoch})")
 
+# NOTE: Epochs aren't actually needed here as there's no fixed dataset to
+# iterate over. What's implemented is entirely equivalent to instead performing
+# epochs * steps_per_epoch optimisation steps. Despite this, epochs are kept
+# for the convenience checkpointing loss, parameters, etc.
+
 for epoch in range(start_epoch, epochs):
     total_loss = 0.0
     pbar = tqdm(range(steps_per_epoch), desc=f"epoch {epoch + 1}/{epochs}", unit="step")
     for step in pbar:
+        global_step = epoch * steps_per_epoch + step
+        current_lr = lr * (1.0 - (global_step / total_steps))
+        for group in optimizer.param_groups:
+            group["lr"] = current_lr
         
         # sample the center word and context word
         idx_centers = np.random.randint(window, corpus_len - window, size=batch_size)
@@ -174,6 +183,8 @@ for epoch in range(start_epoch, epochs):
             "U_state_dict": U.state_dict(),
             "optimizer_state_dict": optimizer.state_dict(),
             "vocab_size": V,
+            "min_count": min_count,
+            "index_to_token": index_to_token,
             "d_model": d,
             "epoch": epoch + 1,
             "rng_state_py": random.getstate(),
