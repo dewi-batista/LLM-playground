@@ -1,3 +1,7 @@
+# TODO: prune vocab, set a min count
+# TODO: LR schedule
+# TODO: hyperparameter tuning; lr, d, k, subsample_t, min_count
+
 from datetime import datetime
 from pathlib import Path
 from tqdm import tqdm
@@ -31,7 +35,7 @@ with open(HERE / "config.yaml", "r") as f:
 # model hyperparams
 batch_size = 8_192
 d = int(config["model"]["d_model"])
-epochs = 20
+epochs = 1_000
 k = 5
 lr = 1e-3
 steps_per_epoch = 100_000
