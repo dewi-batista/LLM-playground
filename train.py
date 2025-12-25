@@ -99,7 +99,7 @@ U = nn.Embedding(V, d).to(device)
 optimizer = optim.Adam(list(E.parameters()) + list(U.parameters()), lr=lr)
 start_epoch = 0
 if RESUME_FROM is not None:
-    ckpt = torch.load(checkpoint_path, map_location=device)
+    ckpt = torch.load(checkpoint_path, map_location=device, weights_only=False)
     E.load_state_dict(ckpt["E_state_dict"])
     U.load_state_dict(ckpt["U_state_dict"])
     optimizer.load_state_dict(ckpt["optimizer_state_dict"])

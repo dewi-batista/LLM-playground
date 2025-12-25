@@ -41,7 +41,7 @@ def load_vocab(vocab_path: Path):
     return token_to_index, index_to_token
 
 def load_embeddings(checkpoint_path: Path, which: str):
-    ckpt = torch.load(checkpoint_path, map_location="cpu")
+    ckpt = torch.load(checkpoint_path, map_location="cpu", weights_only=False)
     E = ckpt["E_state_dict"]["weight"]
     U = ckpt["U_state_dict"]["weight"]
 
