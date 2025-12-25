@@ -34,14 +34,14 @@ with open(HERE / "config.yaml", "r") as f:
 # model hyperparams
 batch_size = 8_192
 d = int(config["model"]["d_model"])
-epochs = 1_000
-k = 5
+epochs = 5
+k = 10
 lr = 1e-3
-steps_per_epoch = 100_000
-total_steps = epochs * steps_per_epoch
-window = 3
-subsample_t = 1e-5
 min_count = 5
+steps_per_epoch = 100_000
+subsample_t = 1e-5
+total_steps = epochs * steps_per_epoch
+window = 5
 
 # other hyperparams
 log_every = 1_000
@@ -59,7 +59,7 @@ models_dir.mkdir(parents=True, exist_ok=True)
 
 # Set RESUME_FROM to None for a new model, "latest" to resume form most recent
 # checkpoint and to a given checkpoint path to resume training from said state.
-RESUME_FROM = "latest"
+RESUME_FROM = None
 
 def latest_checkpoint(models_dir):
     candidates = [p for p in models_dir.glob("*.ckpt")]
