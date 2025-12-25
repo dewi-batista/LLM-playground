@@ -75,14 +75,32 @@ def analogy(a: str, b: str, c: str, W, token_to_index, index_to_token, topk: int
 
 token_to_index, index_to_token = load_vocab(VOCAB_PATH)
 if len(sys.argv) >= 2 and sys.argv[1] in {"-h", "--help"}:
-    print(f"usage: python {Path(__file__).name} [checkpoint_path]")
+    print(f"usage: python {Path(__file__).name} [checkpoint_path] [word ...]")
     raise SystemExit(0)
 
-checkpoint_path = (
-    resolve_checkpoint_arg(sys.argv[1]) if len(sys.argv) >= 2 else latest_checkpoint(MODELS_DIR)
-)
+args = sys.argv[1:]
+query_words = []
+
+if args and (args[0].endswith(".ckpt") or Path(args[0]).is_file()):
+    checkpoint_path = resolve_checkpoint_arg(args[0])
+    query_words = args[1:]
+else:
+    checkpoint_path = latest_checkpoint(MODELS_DIR)
+    query_words = args
+
 print(f"Using checkpoint: {checkpoint_path}")
 W = load_embeddings(checkpoint_path, which=WHICH)
+
+if query_words:
+    print(f"Neighbors (which={WHICH}, topk={TOPK})")
+    for word in query_words:
+        if word not in token_to_index:
+            print(f"- {word}: <not in vocab>")
+            continue
+        nn = most_similar(word, W, token_to_index, index_to_token, topk=TOPK)
+        nn_str = ", ".join(f"{w} ({s:.3f})" for w, s in nn)
+        print(f"- {word}: {nn_str}")
+    raise SystemExit(0)
 
 words = [
     "king",
