@@ -142,6 +142,8 @@ if RESUME_FROM is not None:
 
 for epoch in range(start_epoch, epochs):
     total_loss = 0.0
+    log_loss = 0.0
+    log_steps = 0
     pbar = tqdm(range(steps_per_epoch), desc=f"epoch {epoch + 1}/{epochs}", unit="step")
     for step in pbar:
         global_step = epoch * steps_per_epoch + step
@@ -167,10 +169,15 @@ for epoch in range(start_epoch, epochs):
         loss = neg_sampling_loss(emb_center, emb_contxt, U, context_idx)
         loss.backward()
         optimizer.step()
-        total_loss += float(loss.detach())
+        loss_val = float(loss.detach())
+        total_loss += loss_val
+        log_loss += loss_val
+        log_steps += 1
 
         if log_every > 0 and (step + 1) % log_every == 0:
-            pbar.set_postfix(avg_loss=f"{total_loss / (step + 1):.4f}")
+            pbar.set_postfix(recent_loss=f"{log_loss / log_steps:.4f}")
+            log_loss = 0.0
+            log_steps = 0
 
     avg_loss = total_loss / steps_per_epoch
     tqdm.write(f"epoch {epoch + 1}/{epochs} avg_loss={avg_loss:.4f}")
