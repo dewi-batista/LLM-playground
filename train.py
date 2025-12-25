@@ -1,5 +1,5 @@
 # TODO: prune vocab, set a min count
-# TODO: LR schedule
+# TODO: LR decay (stop when LR dissapears)
 # TODO: hyperparameter tuning; lr, d, k, subsample_t, min_count
 
 from datetime import datetime
