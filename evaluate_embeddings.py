@@ -73,9 +73,44 @@ def analogy(a: str, b: str, c: str, W, token_to_index, index_to_token, topk: int
     values, indices = torch.topk(sims, k=topk)
     return [(index_to_token[int(i)], float(v)) for v, i in zip(values, indices)]
 
+
+def most_similar_vec(vec, W, index_to_token, topk: int, exclude_indeces=()):
+    sims = torch.mv(W, vec)
+    for idx in exclude_indeces:
+        sims[int(idx)] = float("-inf")
+    values, indices = torch.topk(sims, k=topk)
+    return [(index_to_token[int(i)], float(v)) for v, i in zip(values, indices)]
+
+
+def parse_expression(tokens, token_to_index, W):
+    # Example tokens: ["king", "-", "man", "+", "woman"]
+    if len(tokens) == 1 and " " in tokens[0]:
+        tokens = tokens[0].split()
+
+    vec = torch.zeros_like(W[0])
+    used = []
+    sign = 1.0
+    for t in tokens:
+        if t == "+":
+            sign = 1.0
+            continue
+        if t == "-":
+            sign = -1.0
+            continue
+        if t not in token_to_index:
+            raise KeyError(t)
+        idx = token_to_index[t]
+        vec = vec + (sign * W[idx])
+        used.append(idx)
+        sign = 1.0
+
+    return F.normalize(vec, dim=0), used
+
+
 token_to_index, index_to_token = load_vocab(VOCAB_PATH)
 if len(sys.argv) >= 2 and sys.argv[1] in {"-h", "--help"}:
     print(f"usage: python {Path(__file__).name} [checkpoint_path] [word ...]")
+    print(f"   or: python {Path(__file__).name} [checkpoint_path] word - word + word")
     raise SystemExit(0)
 
 args = sys.argv[1:]
@@ -92,6 +127,14 @@ print(f"Using checkpoint: {checkpoint_path}")
 W = load_embeddings(checkpoint_path, which=WHICH)
 
 if query_words:
+    if any(t in {"+", "-"} for t in query_words) or (len(query_words) == 1 and any(ch in query_words[0] for ch in "+-")):
+        vec, used = parse_expression(query_words, token_to_index, W)
+        nn = most_similar_vec(vec, W, index_to_token, topk=TOPK, exclude_indeces=used)
+        nn_str = ", ".join(f"{w} ({s:.3f})" for w, s in nn)
+        print(f"Expr: {' '.join(query_words)}")
+        print(nn_str)
+        raise SystemExit(0)
+
     print(f"Neighbors (which={WHICH}, topk={TOPK})")
     for word in query_words:
         if word not in token_to_index:
