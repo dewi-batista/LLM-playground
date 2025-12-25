@@ -8,7 +8,7 @@ import torch.nn.functional as F
 HERE = Path(__file__).resolve().parent
 
 VOCAB_PATH = HERE / "./data/vocabulary.json"
-MODELS_DIR = HERE / "models"  # produced by train.py
+MODELS_DIR = HERE / "models"  # produced by train_embeddings.py
 WHICH = "E"  # "E", "U", or "sum"
 TOPK = 5
 

@@ -1,3 +1,4 @@
+# Embedding training (word2vec-ish SGNS)
 # TODO: hyperparameter tuning; lr, d, k, subsample_t, min_count
 
 from datetime import datetime

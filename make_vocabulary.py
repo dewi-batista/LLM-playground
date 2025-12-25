@@ -1,4 +1,5 @@
 from collections import Counter
+
 import json
 
 with open("text8.txt") as f:
