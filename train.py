@@ -36,6 +36,7 @@ k = 5
 lr = 1e-3
 steps_per_epoch = 100_000
 window = 3
+subsample_t = 1e-5
 
 # other hyperparams
 log_every = 1_000
@@ -63,20 +64,34 @@ else:
 
 # for probabilities pertaining to negative indices
 neg_probs = np.zeros(V, dtype=np.float64)
+counts = np.zeros(V, dtype=np.int64)
 for word, info in vocab.items():
-    neg_probs[int(info["index"])] = float(info["neg_prob"])
+    idx = int(info["index"])
+    neg_probs[idx] = float(info["neg_prob"])
+    counts[idx] = int(info["count"])
 neg_probs /= neg_probs.sum()
+neg_probs_t = torch.as_tensor(neg_probs, dtype=torch.float, device=device)
 
-# TODO: subsampling frequent words + randomize window size per center (both
-# help a lot on text8)
-def neg_sampling_loss(u, v, U):
+# subsampling frequent words
+freqs = counts.astype(np.float64) / float(counts.sum())
+subsample_keep_probs = (np.sqrt(freqs / subsample_t) + 1.0) * (subsample_t / freqs)
+subsample_keep_probs = np.minimum(subsample_keep_probs, 1.0)
+
+def neg_sampling_loss(u, v, U, context_idx):
     pos_scores = torch.sum(u * v, dim=1)  # (B,)
     loss = -F.logsigmoid(pos_scores)  # (B,)
 
-    # TODO: ensure that neg_indeces doesn't include the index of the context word
-    # TODO: sample using torch.multinomial to remain on GPU
-    neg_indeces = np.random.choice(V, size=(u.shape[0], k), p=neg_probs)
-    neg_indeces = torch.as_tensor(neg_indeces, dtype=torch.long, device=u.device)  # (B, k)
+    neg_indeces = torch.multinomial(neg_probs_t, num_samples=u.shape[0] * k, replacement=True)
+    neg_indeces = neg_indeces.view(u.shape[0], k)  # (B, k)
+    context_idx = context_idx.unsqueeze(1)  # (B, 1)
+    for _ in range(2):
+        mask = neg_indeces.eq(context_idx)
+        replacement = torch.multinomial(neg_probs_t, num_samples=u.shape[0] * k, replacement=True).view(
+            u.shape[0], k
+        )
+        neg_indeces = torch.where(mask, replacement, neg_indeces)
+    mask = neg_indeces.eq(context_idx)
+    neg_indeces = torch.where(mask, (neg_indeces + 1) % V, neg_indeces)
     neg_vecs = U(neg_indeces)  # (B, k, d)
     neg_scores = torch.sum(neg_vecs * u.unsqueeze(1), dim=2)  # (B, k)
     loss -= torch.sum(F.logsigmoid(-neg_scores), dim=1)  # (B,)
@@ -87,6 +102,10 @@ def neg_sampling_loss(u, v, U):
 indeces_corpus_to_token = np.array(
     [int(vocab[word]["index"]) for word in corpus_text], dtype=np.int32
 )
+subsample_seed = int(checkpoint_path.stem) % (2**32 - 1) if checkpoint_path.stem.isdigit() else 0
+subsample_rng = np.random.RandomState(subsample_seed)
+subsample_mask = subsample_rng.random_sample(size=len(indeces_corpus_to_token)) < subsample_keep_probs[indeces_corpus_to_token]
+indeces_corpus_to_token = indeces_corpus_to_token[subsample_mask]
 corpus_len = len(indeces_corpus_to_token)
 
 # NOTE: Epochs aren't actually needed here as there's no fixed dataset to
@@ -112,7 +131,6 @@ if RESUME_FROM is not None:
         torch.cuda.set_rng_state_all([s.cpu() for s in ckpt["rng_state_cuda"]])
     tqdm.write(f"resuming from: {checkpoint_path} (epoch={start_epoch})")
 
-offset_choices = np.array([i for i in range(-window, window + 1) if i != 0], dtype=np.int32)
 for epoch in range(start_epoch, epochs):
     total_loss = 0.0
     pbar = tqdm(range(steps_per_epoch), desc=f"epoch {epoch + 1}/{epochs}", unit="step")
@@ -120,7 +138,10 @@ for epoch in range(start_epoch, epochs):
         
         # sample the center word and context word
         idx_centers = np.random.randint(window, corpus_len - window, size=batch_size)
-        offsets = np.random.choice(offset_choices, size=batch_size)
+        window_sizes = np.random.randint(1, window + 1, size=batch_size)
+        magnitudes = (np.random.random(size=batch_size) * window_sizes).astype(np.int32) + 1
+        signs = np.where(np.random.random(size=batch_size) < 0.5, -1, 1).astype(np.int32)
+        offsets = signs * magnitudes
         idx_contexts = idx_centers + offsets
         center_idx = torch.as_tensor(indeces_corpus_to_token[idx_centers], dtype=torch.long, device=device)
         context_idx = torch.as_tensor(indeces_corpus_to_token[idx_contexts], dtype=torch.long, device=device)
@@ -130,7 +151,7 @@ for epoch in range(start_epoch, epochs):
         emb_center = E(center_idx)
         emb_contxt = U(context_idx)
 
-        loss = neg_sampling_loss(emb_center, emb_contxt, U)
+        loss = neg_sampling_loss(emb_center, emb_contxt, U, context_idx)
         loss.backward()
         optimizer.step()
         total_loss += float(loss.detach())
