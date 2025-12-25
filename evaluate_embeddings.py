@@ -4,7 +4,7 @@ import json
 import sys
 import torch
 import torch.nn.functional as F
- 
+
 HERE = Path(__file__).resolve().parent
 
 VOCAB_PATH = HERE / "./data/vocabulary.json"
