@@ -10,7 +10,7 @@ HERE = Path(__file__).resolve().parent
 VOCAB_PATH = HERE / "./data/vocabulary.json"
 MODELS_DIR = HERE / "models"  # produced by train.py
 WHICH = "E"  # "E", "U", or "sum"
-TOPK = 10
+TOPK = 5
 
 def latest_checkpoint(models_dir: Path) -> Path:
     candidates = [p for p in models_dir.glob("*.ckpt") if p.is_file() and len(p.stem) == 14 and p.stem.isdigit()]
