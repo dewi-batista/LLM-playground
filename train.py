@@ -107,9 +107,9 @@ if RESUME_FROM is not None:
 
     random.setstate(ckpt["rng_state_py"])
     np.random.set_state(ckpt["rng_state_np"])
-    torch.set_rng_state(ckpt["rng_state_torch"])
+    torch.set_rng_state(ckpt["rng_state_torch"].cpu())
     if torch.cuda.is_available() and ckpt["rng_state_cuda"] is not None:
-        torch.cuda.set_rng_state_all(ckpt["rng_state_cuda"])
+        torch.cuda.set_rng_state_all([s.cpu() for s in ckpt["rng_state_cuda"]])
     tqdm.write(f"resuming from: {checkpoint_path} (epoch={start_epoch})")
 
 offset_choices = np.array([i for i in range(-window, window + 1) if i != 0], dtype=np.int32)
