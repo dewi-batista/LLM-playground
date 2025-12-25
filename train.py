@@ -47,7 +47,7 @@ models_dir.mkdir(parents=True, exist_ok=True)
 
 # Set RESUME_FROM to None for a new model, "latest" to resume form most recent
 # checkpoint and to a given checkpoint path to resume training from said state.
-RESUME_FROM = None
+RESUME_FROM = "latest"
 
 def latest_checkpoint(models_dir):
     candidates = [p for p in models_dir.glob("*.ckpt")]
