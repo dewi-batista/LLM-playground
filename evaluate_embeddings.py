@@ -114,7 +114,8 @@ def parse_expression(tokens, token_to_index, W):
 
 
 if len(sys.argv) >= 2 and sys.argv[1] in {"-h", "--help"}:
-    print(f"usage: python {Path(__file__).name} [checkpoint_path] [word ...]")
+    print(f"usage: python {Path(__file__).name} [checkpoint_path] word")
+    print(f"   or: python {Path(__file__).name} [checkpoint_path] word1 word2")
     print(f"   or: python {Path(__file__).name} [checkpoint_path] word - word + word")
     raise SystemExit(0)
 
@@ -142,14 +143,28 @@ if query_words:
         print(nn_str)
         raise SystemExit(0)
 
-    print(f"Neighbors (which={WHICH}, topk={TOPK})")
-    for word in query_words:
+    if len(query_words) == 1:
+        word = query_words[0]
         if word not in token_to_index:
-            print(f"- {word}: <not in vocab>")
-            continue
+            print(f"{word}: <not in vocab>")
+            raise SystemExit(0)
         nn = most_similar(word, W, token_to_index, index_to_token, topk=TOPK)
         nn_str = ", ".join(f"{w} ({s:.3f})" for w, s in nn)
-        print(f"- {word}: {nn_str}")
+        print(f"Neighbors (which={WHICH}, topk={TOPK})")
+        print(f"{word}: {nn_str}")
+        raise SystemExit(0)
+
+    if len(query_words) == 2:
+        w1, w2 = query_words
+        if w1 not in token_to_index or w2 not in token_to_index:
+            missing = [w for w in (w1, w2) if w not in token_to_index]
+            print(f"<not in vocab>: {missing}")
+            raise SystemExit(0)
+        sim = float(torch.dot(W[token_to_index[w1]], W[token_to_index[w2]]).item())
+        print(f"cosine({w1}, {w2}) = {sim:.4f}")
+        raise SystemExit(0)
+
+    print("Provide 1 word for neighbors, 2 words for cosine similarity, or use +/- for arithmetic.")
     raise SystemExit(0)
 
 words = [
