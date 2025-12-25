@@ -29,7 +29,7 @@ with open(HERE / "config.yaml", "r") as f:
     config = yaml.safe_load(f)
 
 # model hyperparams
-batch_size = 1024
+batch_size = 8192
 d = int(config["model"]["d_model"])
 epochs = 20
 k = 5
