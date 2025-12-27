@@ -1,12 +1,11 @@
-data/*.txt
-data/*.csv
-data/*.zip
+# data/*.txt
+# data/*.csv
+# data/*.zip
 
 *DS_store
 *.ckpt
-*.pyc
-*.pyo
+# *.pyc
+# *.pyo
 
 __pycache__/
 .venv/
-cache/
