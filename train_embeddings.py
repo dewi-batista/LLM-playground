@@ -312,9 +312,6 @@ for epoch in range(start_epoch, epochs):
             pbar.set_postfix(recent_loss=f"{log_loss / log_steps:.4f}")
             log_loss = 0.0
             log_steps = 0
-
-    avg_loss = total_loss / steps_per_epoch
-    tqdm.write(f"epoch {epoch + 1}/{epochs} avg_loss={avg_loss:.4f}")
     
     # NOTE: What's saved is for identical continuation. This assumes that saved
     # checkpoints correspond to fully completed epochs.
@@ -338,4 +335,4 @@ for epoch in range(start_epoch, epochs):
         },
         checkpoint_path,
     )
-    tqdm.write(f"saved: {checkpoint_path}")
+tqdm.write(f"saved: {checkpoint_path}")

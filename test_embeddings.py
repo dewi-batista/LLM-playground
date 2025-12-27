@@ -1,10 +1,10 @@
+from itertools import pairwise
 from pathlib import Path
 
 import pickle
 import sys
 import torch
 import torch.nn.functional as F
-from itertools import pairwise
 
 HERE = Path(__file__).resolve().parent
 
@@ -259,16 +259,8 @@ if query_words:
     raise SystemExit(0)
 
 base_words = [
-    "king",
-    "queen",
-    "man",
-    "woman",
-    "paris",
-    "france",
-    "rome",
-    "italy",
-    "london",
-    "england",
+    "king", "queen", "man", "woman", "paris", "france", "rome", "italy",
+    "london","england",
 ]
 words = [" " + w for w in base_words] if use_leading_space else base_words
 
