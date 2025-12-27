@@ -248,6 +248,8 @@ if encodings is not None:
     token_bytes = build_bpe_token_bytes(encodings)
     bpe_encode = make_bpe_encoder(encodings)
 
+use_leading_space = encodings is not None or any(t.startswith(" ") for t in token_to_index)
+
 if query_words:
     if any(t in {"+", "-"} for t in query_words) or (len(query_words) == 1 and any(ch in query_words[0] for ch in "+-")):
         vec, used = parse_expression(query_words, token_to_index, W)
@@ -299,7 +301,7 @@ base_words = [
     "london",
     "england",
 ]
-words = [" " + w for w in base_words] if encodings is not None else base_words
+words = [" " + w for w in base_words] if use_leading_space else base_words
 
 print(f"Neighbors (which={WHICH}, topk={TOPK})")
 for word in words:
@@ -317,7 +319,7 @@ base_analogies = [
     ("man", "king", "woman", "queen"),
     ("france", "paris", "italy", "rome"),
 ]
-analogies = [tuple((" " + w) for w in t) for t in base_analogies] if encodings is not None else base_analogies
+analogies = [tuple((" " + w) for w in t) for t in base_analogies] if use_leading_space else base_analogies
 for a, b, c, expected in analogies:
     try:
         vec, used = parse_expression([b, "-", a, "+", c], token_to_index, W)
