@@ -4,7 +4,10 @@ import json
 
 HERE = Path(__file__).resolve().parent
 
-vocab_dict = json.loads(open(HERE / "vocabulary.json").read())
+vocab_path = HERE / "artifacts" / "vocabulary_full_words.json"
+if not vocab_path.exists():
+    vocab_path = HERE / "data" / "vocabulary.json"
+vocab_dict = json.loads(open(vocab_path).read())
 
 def tokenise(sequence):
     return sequence.split()

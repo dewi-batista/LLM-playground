@@ -12,9 +12,8 @@ import pickle
 import re
 
 HERE = Path(__file__).resolve().parent
-
-with open(HERE / "./data/text8.txt") as f:
-    corpus = f.read()
+ARTIFACTS_DIR = HERE / "artifacts" / "tokeniser"
+ARTIFACTS_DIR.mkdir(parents=True, exist_ok=True)
 
 # hyperparameters
 V_MAX = 30_000
@@ -183,7 +182,7 @@ def learn_encodings(corpus):
         }
         for token_id in range(V)
     }
-    with open(HERE / f"./data/vocabulary_bpe_{run_timestamp}.json", "w") as f:
+    with open(ARTIFACTS_DIR / f"vocabulary_bpe_{run_timestamp}.json", "w") as f:
         f.write("{\n")
         for token_id in range(V):
             key = str(token_id)
@@ -191,7 +190,10 @@ def learn_encodings(corpus):
             comma = "," if token_id < V - 1 else ""
             f.write(f'    "{key}": {subdict}{comma}\n')
         f.write("}\n")
-    with open(HERE / f"./config/encodings_{run_timestamp}.pkl", "wb") as f:
+    with open(ARTIFACTS_DIR / f"encodings_{run_timestamp}.pkl", "wb") as f:
         pickle.dump(encodings, f)
 
-learn_encodings(corpus)
+if __name__ == "__main__":
+    with open(HERE / "./data/text8.txt") as f:
+        corpus = f.read()
+    learn_encodings(corpus)

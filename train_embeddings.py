@@ -18,6 +18,15 @@ import torch.optim as optim
 import yaml
 
 HERE = Path(__file__).resolve().parent
+TOKENISER_DIR = HERE / "artifacts" / "tokeniser"
+CACHE_DIR = HERE / "cache"
+CACHE_DIR.mkdir(parents=True, exist_ok=True)
+
+def maybe_relpath(path: Path) -> str:
+    try:
+        return str(path.relative_to(HERE))
+    except ValueError:
+        return str(path)
 
 # NOTE: I learned recently of an "mps" device which some Apple MacBooks have.
 # Perhaps worth adding in future (my M1 MacBook Air blows).
@@ -35,7 +44,10 @@ def latest_bpe_vocab(data_dir: Path) -> Path | None:
     return max(candidates, key=lambda p: p.stem.split("_")[-1]) if candidates else None
 
 if VOCAB_PATH is None:
-    VOCAB_PATH = latest_bpe_vocab(HERE / "data") or (HERE / "./data/vocabulary.json")
+    word_vocab_fallback = HERE / "artifacts" / "vocabulary_full_words.json"
+    if not word_vocab_fallback.exists():
+        word_vocab_fallback = HERE / "data" / "vocabulary.json"
+    VOCAB_PATH = latest_bpe_vocab(TOKENISER_DIR) or latest_bpe_vocab(HERE / "data") or word_vocab_fallback
 
 with open(VOCAB_PATH) as f:
     vocab = json.load(f)
@@ -73,7 +85,9 @@ def iter_pre_tokens(sequence: str):
 is_bpe_vocab = all(k.isdigit() for k in vocab.keys())
 if is_bpe_vocab:
     vocab_timestamp = VOCAB_PATH.stem.split("_")[-1]
-    encodings_path = HERE / f"./config/encodings_{vocab_timestamp}.pkl"
+    encodings_path = TOKENISER_DIR / f"encodings_{vocab_timestamp}.pkl"
+    if not encodings_path.exists():
+        encodings_path = HERE / f"./config/encodings_{vocab_timestamp}.pkl"
     with open(encodings_path, "rb") as f:
         encodings = pickle.load(f)
 
@@ -93,7 +107,7 @@ if is_bpe_vocab:
     neg_probs_t = torch.as_tensor(neg_probs, dtype=torch.float, device=device)
 
     # tokenise text8.txt into token IDs (cached)
-    token_ids_path = HERE / f"./data/text8_token_ids_{vocab_timestamp}.npy"
+    token_ids_path = CACHE_DIR / f"text8_token_ids_{vocab_timestamp}.npy"
     if token_ids_path.exists():
         token_ids = np.load(token_ids_path, mmap_mode="r")
     else:
@@ -308,8 +322,8 @@ for epoch in range(start_epoch, epochs):
             "index_to_token": index_to_token,
             "d_model": d,
             "is_bpe_vocab": bool(is_bpe_vocab),
-            "bpe_vocab_path": str(VOCAB_PATH) if is_bpe_vocab else None,
-            "bpe_encodings_path": str(encodings_path) if is_bpe_vocab else None,
+            "bpe_vocab_path": maybe_relpath(Path(VOCAB_PATH)) if is_bpe_vocab else None,
+            "bpe_encodings_path": maybe_relpath(encodings_path) if is_bpe_vocab else None,
             "epoch": epoch + 1,
             "rng_state_py": random.getstate(),
             "rng_state_np": np.random.get_state(),

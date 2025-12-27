@@ -6,10 +6,18 @@ import sys
 
 HERE = Path(__file__).resolve().parent
 
-with open(HERE / "./data/text8.txt") as f:
-    corpus = f.read()
+TOKENISER_DIR = HERE / "artifacts" / "tokeniser"
 
-with open(HERE / "./config/encodings_20251226201128.pkl", "rb") as f:
+def latest_encodings(tokeniser_dir: Path) -> Path | None:
+    candidates = [
+        p
+        for p in tokeniser_dir.glob("encodings_*.pkl")
+        if p.is_file() and len(p.stem.split("_")[-1]) == 14 and p.stem.split("_")[-1].isdigit()
+    ]
+    return max(candidates, key=lambda p: p.stem.split("_")[-1]) if candidates else None
+
+encodings_path = latest_encodings(TOKENISER_DIR) or latest_encodings(HERE / "config")
+with open(encodings_path, "rb") as f:
     encodings = pickle.load(f)
 
 encodings_dict_reversed = {}
