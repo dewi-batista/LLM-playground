@@ -21,12 +21,17 @@ MODELS_DIR = HERE / "models"
 MODELS_DIR.mkdir(parents=True, exist_ok=True)
 
 if len(sys.argv) < 3 or sys.argv[1] in {"-h", "--help"}:
-    print(f"usage: python {Path(__file__).name} <language> <timestamp> [fresh]")
+    print(f"usage: python {Path(__file__).name} <language> <vocab_timestamp> [model_number]")
     raise SystemExit(1)
 
 language = sys.argv[1]
 timestamp = sys.argv[2]
-fresh = len(sys.argv) > 3 and sys.argv[3] in {"fresh", "--fresh"}
+model_number = None
+if len(sys.argv) > 3:
+    if not sys.argv[3].isdigit():
+        print(f"usage: python {Path(__file__).name} <language> <vocab_timestamp> [model_number]")
+        raise SystemExit(1)
+    model_number = int(sys.argv[3])
 
 run_dir = MODELS_DIR / language / timestamp
 run_dir.mkdir(parents=True, exist_ok=True)
@@ -35,7 +40,14 @@ corpus_path = HERE / "data" / f"{language}.txt"
 vocab_path = run_dir / f"{language}_{timestamp}.json"
 encodings_path = run_dir / f"{language}_{timestamp}.pkl"
 token_ids_path = run_dir / f"{language}_{timestamp}.npy"
-checkpoint_path = run_dir / f"{language}_{timestamp}.ckpt"
+
+if model_number is None:
+    model_number = len(list(run_dir.glob(f"{language}_{timestamp}_*.ckpt"))) + 1
+    checkpoint_path = run_dir / f"{language}_{timestamp}_{model_number}.ckpt"
+    resume = False
+else:
+    checkpoint_path = run_dir / f"{language}_{timestamp}_{model_number}.ckpt"
+    resume = True
 
 def maybe_relpath(path: Path) -> str:
     try:
@@ -214,8 +226,8 @@ if not is_bpe_vocab:
     indeces_corpus_to_token = np.array(
         [token_to_index[word] for word in corpus_text if word in token_to_index], dtype=np.int32
     )
-ts = checkpoint_path.stem.split("_")[-1]
-subsample_seed = int(ts) % (2**32 - 1) if len(ts) == 14 and ts.isdigit() else 0
+seed_base = int(timestamp) if timestamp.isdigit() and len(timestamp) == 14 else 0
+subsample_seed = (seed_base + int(model_number)) % (2**32 - 1)
 subsample_rng = np.random.RandomState(subsample_seed)
 subsample_mask = subsample_rng.random_sample(size=len(indeces_corpus_to_token)) < subsample_keep_probs[indeces_corpus_to_token]
 indeces_corpus_to_token = indeces_corpus_to_token[subsample_mask]
@@ -225,8 +237,8 @@ E = nn.Embedding(V, d).to(device)
 U = nn.Embedding(V, d).to(device)
 optimizer = optim.Adam(list(E.parameters()) + list(U.parameters()), lr=lr)
 start_epoch = 0
-resume = checkpoint_path.exists() and not fresh
 if resume:
+    assert checkpoint_path.exists()
     ckpt = torch.load(checkpoint_path, map_location=device, weights_only=False)
     E.load_state_dict(ckpt["E_state_dict"])
     U.load_state_dict(ckpt["U_state_dict"])
@@ -283,6 +295,9 @@ for epoch in range(start_epoch, epochs):
             pbar.set_postfix(recent_loss=f"{log_loss / log_steps:.4f}")
             log_loss = 0.0
             log_steps = 0
+
+    avg_loss = total_loss / steps_per_epoch
+    tqdm.write(f"epoch {epoch + 1}/{epochs} avg_loss={avg_loss:.4f}")
     
     # NOTE: What's saved is for identical continuation. This assumes that saved
     # checkpoints correspond to fully completed epochs.
@@ -306,4 +321,4 @@ for epoch in range(start_epoch, epochs):
         },
         checkpoint_path,
     )
-tqdm.write(f"saved: {checkpoint_path}")
+    tqdm.write(f"saved: {checkpoint_path}")

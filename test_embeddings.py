@@ -185,20 +185,24 @@ def parse_expression(tokens, token_to_index, W):
 
 
 if len(sys.argv) >= 2 and sys.argv[1] in {"-h", "--help"}:
-    print(f"usage: python {Path(__file__).name} <language> <timestamp> [word]")
-    print(f"   or: python {Path(__file__).name} <language> <timestamp> word1 word2")
-    print(f"   or: python {Path(__file__).name} <language> <timestamp> word - word + word")
+    print(f"usage: python {Path(__file__).name} <language> <vocab_timestamp> <model_number> [word]")
+    print(f"   or: python {Path(__file__).name} <language> <vocab_timestamp> <model_number> word1 word2")
+    print(f"   or: python {Path(__file__).name} <language> <vocab_timestamp> <model_number> word - word + word")
     raise SystemExit(0)
 
-if len(sys.argv) < 3:
-    print(f"usage: python {Path(__file__).name} <language> <timestamp> [word]")
+if len(sys.argv) < 4:
+    print(f"usage: python {Path(__file__).name} <language> <vocab_timestamp> <model_number> [word]")
     raise SystemExit(1)
 
 language = sys.argv[1]
 timestamp = sys.argv[2]
+model_number = sys.argv[3]
+if not model_number.isdigit():
+    print(f"usage: python {Path(__file__).name} <language> <vocab_timestamp> <model_number> [word]")
+    raise SystemExit(1)
 run_dir = MODELS_DIR / language / timestamp
-checkpoint_path = run_dir / f"{language}_{timestamp}.ckpt"
-query_words = sys.argv[3:]
+checkpoint_path = run_dir / f"{language}_{timestamp}_{model_number}.ckpt"
+query_words = sys.argv[4:]
 
 query_words = [cli_to_token(w) if w not in {"+", "-"} else w for w in query_words]
 
