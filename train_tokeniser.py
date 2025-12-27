@@ -12,7 +12,7 @@ import pickle
 import re
 
 HERE = Path(__file__).resolve().parent
-ARTIFACTS_DIR = HERE / "artifacts" / "tokeniser"
+ARTIFACTS_DIR = HERE / "artifacts" / "tokenisers"
 ARTIFACTS_DIR.mkdir(parents=True, exist_ok=True)
 
 # hyperparameters
@@ -194,6 +194,6 @@ def learn_encodings(corpus):
         pickle.dump(encodings, f)
 
 if __name__ == "__main__":
-    with open(HERE / "./data/text8.txt") as f:
+    with open(HERE / "./data/welsh_text.txt") as f:
         corpus = f.read()
     learn_encodings(corpus)

@@ -1,4 +1,3 @@
-# Embedding training (word2vec-ish SGNS)
 # TODO: hyperparameter tuning; lr, d, k, subsample_t, min_count
 
 from datetime import datetime
@@ -18,9 +17,12 @@ import torch.optim as optim
 import yaml
 
 HERE = Path(__file__).resolve().parent
-TOKENISER_DIR = HERE / "artifacts" / "tokeniser"
+
+TOKENISER_DIR = HERE / "artifacts" / "tokenisers"
 CACHE_DIR = HERE / "cache"
+
 CACHE_DIR.mkdir(parents=True, exist_ok=True)
+TOKENISER_DIR.mkdir(parents=True, exist_ok=True)
 
 def maybe_relpath(path: Path) -> str:
     try:
@@ -32,7 +34,7 @@ def maybe_relpath(path: Path) -> str:
 # Perhaps worth adding in future (my M1 MacBook Air blows).
 device = torch.device("cuda") if torch.cuda.is_available() else torch.device("cpu")
 
-VOCAB_PATH = None  # set to a specific file or None for latest BPE vocab
+VOCAB_PATH = TOKENISER_DIR / "vocabulary_bpe_20251227142719.json"  # set to a specific file or None for latest BPE vocab
 
 # for vocab
 def latest_bpe_vocab(data_dir: Path) -> Path | None:
@@ -53,7 +55,7 @@ with open(VOCAB_PATH) as f:
     vocab = json.load(f)
 
 # for config
-with open(HERE / "config.yaml", "r") as f:
+with open(HERE / "./config/config.yaml", "r") as f:
     config = yaml.safe_load(f)
 
 # model hyperparams
@@ -145,7 +147,7 @@ if is_bpe_vocab:
             cache[token] = ids
             return ids
 
-        with open(HERE / "./data/text8.txt") as f:
+        with open(HERE / "./data/welsh-text.txt") as f:
             corpus = f.read()
 
         total_token_ids = sum(int(info["count"]) for info in vocab.values())
@@ -167,7 +169,7 @@ if is_bpe_vocab:
 
 else:
     # for text
-    with open(HERE / "./data/text8.txt") as f:
+    with open(HERE / "./data/welsh-text.txt") as f:
         corpus_text = f.read().split()
 
     # prune vocab

@@ -2,7 +2,7 @@ from math import cos, sin
 
 import yaml
 
-with open('config.yaml', "r") as f:
+with open('./config/config.yaml', "r") as f:
     config = yaml.safe_load(f)
 d_model = config["model"]["d_model"]
 
