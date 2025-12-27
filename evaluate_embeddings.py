@@ -9,7 +9,7 @@ from itertools import pairwise
 
 HERE = Path(__file__).resolve().parent
 
-VOCAB_PATH = HERE / "./data/vocabulary.json"
+VOCAB_PATH = HERE / "./data/vocabulary_bpe_20251227000353.json"
 MODELS_DIR = HERE / "models"  # produced by train_embeddings.py
 WHICH = "E"  # "E", "U", or "sum"
 TOPK = 5
