@@ -8,17 +8,10 @@ import torch.nn.functional as F
 
 HERE = Path(__file__).resolve().parent
 
+MODELS_DIR = HERE / "models"
+
 WHICH = "E"  # "E", "U", or "sum"
 TOPK = 5
-
-def resolve_checkpoint_arg(arg: str) -> Path:
-    path = Path(arg)
-    if path.is_absolute() or path.exists():
-        return path
-    alt = HERE / path
-    if alt.exists():
-        return alt
-    return path
 
 def load_embeddings(ckpt, which: str):
     E = ckpt["E_state_dict"]["weight"]
@@ -192,17 +185,20 @@ def parse_expression(tokens, token_to_index, W):
 
 
 if len(sys.argv) >= 2 and sys.argv[1] in {"-h", "--help"}:
-    print(f"usage: python {Path(__file__).name} <checkpoint_path> [word]")
-    print(f"   or: python {Path(__file__).name} <checkpoint_path> word1 word2")
-    print(f"   or: python {Path(__file__).name} <checkpoint_path> word - word + word")
+    print(f"usage: python {Path(__file__).name} <language> <timestamp> [word]")
+    print(f"   or: python {Path(__file__).name} <language> <timestamp> word1 word2")
+    print(f"   or: python {Path(__file__).name} <language> <timestamp> word - word + word")
     raise SystemExit(0)
 
-if len(sys.argv) < 2:
-    print(f"usage: python {Path(__file__).name} <checkpoint_path> [word]")
+if len(sys.argv) < 3:
+    print(f"usage: python {Path(__file__).name} <language> <timestamp> [word]")
     raise SystemExit(1)
 
-checkpoint_path = resolve_checkpoint_arg(sys.argv[1])
-query_words = sys.argv[2:]
+language = sys.argv[1]
+timestamp = sys.argv[2]
+run_dir = MODELS_DIR / language / timestamp
+checkpoint_path = run_dir / f"{language}_{timestamp}.ckpt"
+query_words = sys.argv[3:]
 
 query_words = [cli_to_token(w) if w not in {"+", "-"} else w for w in query_words]
 

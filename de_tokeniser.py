@@ -6,13 +6,13 @@ import sys
 
 HERE = Path(__file__).resolve().parent
 
-if len(sys.argv) < 3 or sys.argv[1] in {"-h", "--help"}:
-    print(f"usage: python {Path(__file__).name} <encodings_pkl> <text...>")
+if len(sys.argv) < 4 or sys.argv[1] in {"-h", "--help"}:
+    print(f"usage: python {Path(__file__).name} <language> <timestamp> <text...>")
     raise SystemExit(1)
 
-encodings_path = Path(sys.argv[1])
-if not encodings_path.is_absolute():
-    encodings_path = HERE / encodings_path
+language = sys.argv[1]
+timestamp = sys.argv[2]
+encodings_path = HERE / "models" / language / timestamp / f"{language}_{timestamp}.pkl"
 
 with open(encodings_path, "rb") as f:
     encodings = pickle.load(f)
@@ -26,7 +26,7 @@ if __name__ == "__main__":
 
     print("First five encodings:", [[chr(char) for char in encoding[0]] for encoding in encodings[:5]])
 
-    corpus = " ".join(sys.argv[2:])
+    corpus = " ".join(sys.argv[3:])
     corpus_tokenised = tokenise(corpus, encodings)
     print("Token IDs:", corpus_tokenised)
 

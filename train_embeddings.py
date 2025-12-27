@@ -1,6 +1,4 @@
 # TODO: hyperparameter tuning; lr, d, k, subsample_t, min_count
-
-from datetime import datetime
 from itertools import pairwise
 from pathlib import Path
 from tqdm import tqdm
@@ -19,26 +17,25 @@ import yaml
 
 HERE = Path(__file__).resolve().parent
 
-TOKENISER_DIR = HERE / "artifacts" / "tokenisers"
-CACHE_DIR = HERE / "cache"
+MODELS_DIR = HERE / "models"
+MODELS_DIR.mkdir(parents=True, exist_ok=True)
 
-CACHE_DIR.mkdir(parents=True, exist_ok=True)
-TOKENISER_DIR.mkdir(parents=True, exist_ok=True)
-
-if len(sys.argv) < 4 or sys.argv[1] in {"-h", "--help"}:
-    print(f"usage: python {Path(__file__).name} <language> <corpus_txt> <vocab_json> [encodings_pkl] [resume_ckpt]")
+if len(sys.argv) < 3 or sys.argv[1] in {"-h", "--help"}:
+    print(f"usage: python {Path(__file__).name} <language> <timestamp> [fresh]")
     raise SystemExit(1)
 
 language = sys.argv[1]
-corpus_path = Path(sys.argv[2])
-vocab_path = Path(sys.argv[3])
-encodings_path = None
-resume_ckpt = None
+timestamp = sys.argv[2]
+fresh = len(sys.argv) > 3 and sys.argv[3] in {"fresh", "--fresh"}
 
-if not corpus_path.is_absolute():
-    corpus_path = HERE / corpus_path
-if not vocab_path.is_absolute():
-    vocab_path = HERE / vocab_path
+run_dir = MODELS_DIR / language / timestamp
+run_dir.mkdir(parents=True, exist_ok=True)
+
+corpus_path = HERE / "data" / f"{language}.txt"
+vocab_path = run_dir / f"{language}_{timestamp}.json"
+encodings_path = run_dir / f"{language}_{timestamp}.pkl"
+token_ids_path = run_dir / f"{language}_{timestamp}.npy"
+checkpoint_path = run_dir / f"{language}_{timestamp}.ckpt"
 
 def maybe_relpath(path: Path) -> str:
     try:
@@ -54,22 +51,7 @@ device = torch.device("cuda") if torch.cuda.is_available() else torch.device("cp
 with open(vocab_path) as f:
     vocab = json.load(f)
 
-# parse optional args after vocab type is known
 is_bpe_vocab = all(k.isdigit() for k in vocab.keys())
-rest = sys.argv[4:]
-if is_bpe_vocab:
-    if not rest:
-        print("error: BPE vocab requires encodings_pkl argument")
-        raise SystemExit(1)
-    encodings_path = Path(rest[0])
-    resume_ckpt = Path(rest[1]) if len(rest) > 1 else None
-else:
-    resume_ckpt = Path(rest[0]) if rest else None
-
-if encodings_path is not None and not encodings_path.is_absolute():
-    encodings_path = HERE / encodings_path
-if resume_ckpt is not None and not resume_ckpt.is_absolute():
-    resume_ckpt = HERE / resume_ckpt
 
 # for config
 with open(HERE / "./config/config.yaml", "r") as f:
@@ -102,7 +84,6 @@ def iter_pre_tokens(sequence: str):
             yield " " + token
 
 if is_bpe_vocab:
-    vocab_language, vocab_timestamp = vocab_path.stem.rsplit("_", 1)
     with open(encodings_path, "rb") as f:
         encodings = pickle.load(f)
 
@@ -122,7 +103,6 @@ if is_bpe_vocab:
     neg_probs_t = torch.as_tensor(neg_probs, dtype=torch.float, device=device)
 
     # tokenise corpus into token IDs (cached)
-    token_ids_path = CACHE_DIR / f"{language}_{vocab_timestamp}.npy"
     if token_ids_path.exists():
         token_ids = np.load(token_ids_path, mmap_mode="r")
     else:
@@ -192,16 +172,6 @@ else:
     token_to_index = {word: i for i, word in enumerate(index_to_token)}
     V = len(index_to_token)
 
-# config for storing model params
-models_dir = HERE / "models"
-models_dir.mkdir(parents=True, exist_ok=True)
-
-if resume_ckpt is not None:
-    checkpoint_path = resume_ckpt
-else:
-    run_timestamp = datetime.now().strftime("%Y%m%d%H%M%S")
-    checkpoint_path = models_dir / f"{language}_{run_timestamp}.ckpt"
-
 if not is_bpe_vocab:
     # for probabilities pertaining to negative indices
     neg_probs = np.zeros(V, dtype=np.float64)
@@ -255,7 +225,8 @@ E = nn.Embedding(V, d).to(device)
 U = nn.Embedding(V, d).to(device)
 optimizer = optim.Adam(list(E.parameters()) + list(U.parameters()), lr=lr)
 start_epoch = 0
-if resume_ckpt is not None:
+resume = checkpoint_path.exists() and not fresh
+if resume:
     ckpt = torch.load(checkpoint_path, map_location=device, weights_only=False)
     E.load_state_dict(ckpt["E_state_dict"])
     U.load_state_dict(ckpt["U_state_dict"])

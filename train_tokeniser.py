@@ -13,8 +13,8 @@ import re
 import sys
 
 HERE = Path(__file__).resolve().parent
-ARTIFACTS_DIR = HERE / "artifacts" / "tokenisers"
-ARTIFACTS_DIR.mkdir(parents=True, exist_ok=True)
+MODELS_DIR = HERE / "models"
+MODELS_DIR.mkdir(parents=True, exist_ok=True)
 
 # hyperparameters
 V_MAX = 30_000
@@ -88,6 +88,8 @@ def learn_encodings(corpus, language):
     # NOTE: This learns BPE merges using word-type counts, rather than scanning
     # every token occurrence in the corpus. Same result but faster.
     run_timestamp = datetime.now().strftime("%Y%m%d%H%M%S")
+    run_dir = MODELS_DIR / language / run_timestamp
+    run_dir.mkdir(parents=True, exist_ok=True)
 
     token_counts = Counter(iter_pre_tokens(corpus)) if type(corpus) == str else Counter(corpus)
 
@@ -183,7 +185,9 @@ def learn_encodings(corpus, language):
         }
         for token_id in range(V)
     }
-    with open(ARTIFACTS_DIR / f"{language}_{run_timestamp}.json", "w") as f:
+    vocab_path = run_dir / f"{language}_{run_timestamp}.json"
+    encodings_path = run_dir / f"{language}_{run_timestamp}.pkl"
+    with open(vocab_path, "w") as f:
         f.write("{\n")
         for token_id in range(V):
             key = str(token_id)
@@ -191,16 +195,17 @@ def learn_encodings(corpus, language):
             comma = "," if token_id < V - 1 else ""
             f.write(f'    "{key}": {subdict}{comma}\n')
         f.write("}\n")
-    with open(ARTIFACTS_DIR / f"{language}_{run_timestamp}.pkl", "wb") as f:
+    with open(encodings_path, "wb") as f:
         pickle.dump(encodings, f)
+    print(f"saved: {run_dir}")
 
 if __name__ == "__main__":
-    if len(sys.argv) != 3 or sys.argv[1] in {"-h", "--help"}:
-        print(f"usage: python {Path(__file__).name} <language> <corpus_txt>")
+    if len(sys.argv) < 2 or sys.argv[1] in {"-h", "--help"}:
+        print(f"usage: python {Path(__file__).name} <language> [corpus_txt]")
         raise SystemExit(1)
 
     language = sys.argv[1]
-    corpus_path = Path(sys.argv[2])
+    corpus_path = Path(sys.argv[2]) if len(sys.argv) > 2 else (HERE / "data" / f"{language}.txt")
     if not corpus_path.is_absolute():
         corpus_path = HERE / corpus_path
     with open(corpus_path) as f:
