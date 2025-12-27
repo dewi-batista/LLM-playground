@@ -6,7 +6,14 @@ import sys
 
 HERE = Path(__file__).resolve().parent
 
-encodings_path = HERE / "artifacts/tokenisers/encodings_20251227142719.pkl"
+if len(sys.argv) < 3 or sys.argv[1] in {"-h", "--help"}:
+    print(f"usage: python {Path(__file__).name} <encodings_pkl> <text...>")
+    raise SystemExit(1)
+
+encodings_path = Path(sys.argv[1])
+if not encodings_path.is_absolute():
+    encodings_path = HERE / encodings_path
+
 with open(encodings_path, "rb") as f:
     encodings = pickle.load(f)
 
@@ -19,10 +26,7 @@ if __name__ == "__main__":
 
     print("First five encodings:", [[chr(char) for char in encoding[0]] for encoding in encodings[:5]])
 
-    args = sys.argv[1:]
-    corpus = args[0]
-    for i in range(1, len(args)):
-        corpus += " " + args[i]
+    corpus = " ".join(sys.argv[2:])
     corpus_tokenised = tokenise(corpus, encodings)
     print("Token IDs:", corpus_tokenised)
 

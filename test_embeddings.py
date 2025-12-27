@@ -1,6 +1,5 @@
 from pathlib import Path
 
-import json
 import pickle
 import sys
 import torch
@@ -9,19 +8,8 @@ from itertools import pairwise
 
 HERE = Path(__file__).resolve().parent
 
-VOCAB_PATH = HERE / "artifacts" / "tokenisers" / "vocabulary_bpe_20251227142719.json"
-assert VOCAB_PATH.exists()
-if not VOCAB_PATH.exists():
-    VOCAB_PATH = HERE / "artifacts" / "vocabulary_full_words.json"
-MODELS_DIR = HERE / "models"  # produced by train_embeddings.py
 WHICH = "E"  # "E", "U", or "sum"
 TOPK = 5
-
-def latest_checkpoint(models_dir: Path) -> Path:
-    candidates = [p for p in models_dir.glob("*.ckpt") if p.is_file() and len(p.stem) == 14 and p.stem.isdigit()]
-    if not candidates:
-        raise FileNotFoundError(f"no timestamped checkpoints found in {models_dir} (expected YYYYMMDDHHMMSS.ckpt)")
-    return max(candidates, key=lambda p: p.stem)
 
 def resolve_checkpoint_arg(arg: str) -> Path:
     path = Path(arg)
@@ -31,26 +19,6 @@ def resolve_checkpoint_arg(arg: str) -> Path:
     if alt.exists():
         return alt
     return path
-
-def load_vocab(vocab_path: Path):
-    vocab = json.loads(vocab_path.read_text())
-    V = len(vocab)
-
-    token_to_index = {}
-    index_to_token = [None] * V
-    for token, info in vocab.items():
-        idx = int(info["index"])
-        token_to_index[token] = idx
-        index_to_token[idx] = token
-
-    return token_to_index, index_to_token
-
-def load_vocab_from_ckpt(ckpt, vocab_path: Path):
-    if "index_to_token" in ckpt:
-        index_to_token = ckpt["index_to_token"]
-        token_to_index = {t: i for i, t in enumerate(index_to_token)}
-        return token_to_index, index_to_token
-    return load_vocab(vocab_path)
 
 def load_embeddings(ckpt, which: str):
     E = ckpt["E_state_dict"]["weight"]
@@ -224,26 +192,24 @@ def parse_expression(tokens, token_to_index, W):
 
 
 if len(sys.argv) >= 2 and sys.argv[1] in {"-h", "--help"}:
-    print(f"usage: python {Path(__file__).name} [checkpoint_path] word")
-    print(f"   or: python {Path(__file__).name} [checkpoint_path] word1 word2")
-    print(f"   or: python {Path(__file__).name} [checkpoint_path] word - word + word")
+    print(f"usage: python {Path(__file__).name} <checkpoint_path> [word]")
+    print(f"   or: python {Path(__file__).name} <checkpoint_path> word1 word2")
+    print(f"   or: python {Path(__file__).name} <checkpoint_path> word - word + word")
     raise SystemExit(0)
 
-args = sys.argv[1:]
-query_words = []
+if len(sys.argv) < 2:
+    print(f"usage: python {Path(__file__).name} <checkpoint_path> [word]")
+    raise SystemExit(1)
 
-if args and (args[0].endswith(".ckpt") or Path(args[0]).is_file()):
-    checkpoint_path = resolve_checkpoint_arg(args[0])
-    query_words = args[1:]
-else:
-    checkpoint_path = latest_checkpoint(MODELS_DIR)
-    query_words = args
+checkpoint_path = resolve_checkpoint_arg(sys.argv[1])
+query_words = sys.argv[2:]
 
 query_words = [cli_to_token(w) if w not in {"+", "-"} else w for w in query_words]
 
 print(f"Using checkpoint: {checkpoint_path}")
 ckpt = torch.load(checkpoint_path, map_location="cpu", weights_only=False)
-token_to_index, index_to_token = load_vocab_from_ckpt(ckpt, VOCAB_PATH)
+index_to_token = ckpt["index_to_token"]
+token_to_index = {t: i for i, t in enumerate(index_to_token)}
 W = load_embeddings(ckpt, which=WHICH)
 
 encodings = load_bpe_encodings_from_ckpt(ckpt)

@@ -1,4 +1,6 @@
-text8.txt
+data/*.txt
+data/*.csv
+data/*.zip
 
 *DS_store
 *.ckpt

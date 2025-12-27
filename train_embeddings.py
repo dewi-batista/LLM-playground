@@ -10,6 +10,7 @@ import numpy as np
 import pickle
 import random
 import re
+import sys
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -24,6 +25,21 @@ CACHE_DIR = HERE / "cache"
 CACHE_DIR.mkdir(parents=True, exist_ok=True)
 TOKENISER_DIR.mkdir(parents=True, exist_ok=True)
 
+if len(sys.argv) < 4 or sys.argv[1] in {"-h", "--help"}:
+    print(f"usage: python {Path(__file__).name} <language> <corpus_txt> <vocab_json> [encodings_pkl] [resume_ckpt]")
+    raise SystemExit(1)
+
+language = sys.argv[1]
+corpus_path = Path(sys.argv[2])
+vocab_path = Path(sys.argv[3])
+encodings_path = None
+resume_ckpt = None
+
+if not corpus_path.is_absolute():
+    corpus_path = HERE / corpus_path
+if not vocab_path.is_absolute():
+    vocab_path = HERE / vocab_path
+
 def maybe_relpath(path: Path) -> str:
     try:
         return str(path.relative_to(HERE))
@@ -34,25 +50,26 @@ def maybe_relpath(path: Path) -> str:
 # Perhaps worth adding in future (my M1 MacBook Air blows).
 device = torch.device("cuda") if torch.cuda.is_available() else torch.device("cpu")
 
-VOCAB_PATH = TOKENISER_DIR / "vocabulary_bpe_20251227142719.json"  # set to a specific file or None for latest BPE vocab
-
 # for vocab
-def latest_bpe_vocab(data_dir: Path) -> Path | None:
-    candidates = [
-        p
-        for p in data_dir.glob("vocabulary_bpe_*.json")
-        if p.is_file() and len(p.stem.split("_")[-1]) == 14 and p.stem.split("_")[-1].isdigit()
-    ]
-    return max(candidates, key=lambda p: p.stem.split("_")[-1]) if candidates else None
-
-if VOCAB_PATH is None:
-    word_vocab_fallback = HERE / "artifacts" / "vocabulary_full_words.json"
-    if not word_vocab_fallback.exists():
-        word_vocab_fallback = HERE / "data" / "vocabulary.json"
-    VOCAB_PATH = latest_bpe_vocab(TOKENISER_DIR) or latest_bpe_vocab(HERE / "data") or word_vocab_fallback
-
-with open(VOCAB_PATH) as f:
+with open(vocab_path) as f:
     vocab = json.load(f)
+
+# parse optional args after vocab type is known
+is_bpe_vocab = all(k.isdigit() for k in vocab.keys())
+rest = sys.argv[4:]
+if is_bpe_vocab:
+    if not rest:
+        print("error: BPE vocab requires encodings_pkl argument")
+        raise SystemExit(1)
+    encodings_path = Path(rest[0])
+    resume_ckpt = Path(rest[1]) if len(rest) > 1 else None
+else:
+    resume_ckpt = Path(rest[0]) if rest else None
+
+if encodings_path is not None and not encodings_path.is_absolute():
+    encodings_path = HERE / encodings_path
+if resume_ckpt is not None and not resume_ckpt.is_absolute():
+    resume_ckpt = HERE / resume_ckpt
 
 # for config
 with open(HERE / "./config/config.yaml", "r") as f:
@@ -84,12 +101,8 @@ def iter_pre_tokens(sequence: str):
         else:
             yield " " + token
 
-is_bpe_vocab = all(k.isdigit() for k in vocab.keys())
 if is_bpe_vocab:
-    vocab_timestamp = VOCAB_PATH.stem.split("_")[-1]
-    encodings_path = TOKENISER_DIR / f"encodings_{vocab_timestamp}.pkl"
-    if not encodings_path.exists():
-        encodings_path = HERE / f"./config/encodings_{vocab_timestamp}.pkl"
+    vocab_language, vocab_timestamp = vocab_path.stem.rsplit("_", 1)
     with open(encodings_path, "rb") as f:
         encodings = pickle.load(f)
 
@@ -108,8 +121,8 @@ if is_bpe_vocab:
     neg_probs /= neg_probs.sum()
     neg_probs_t = torch.as_tensor(neg_probs, dtype=torch.float, device=device)
 
-    # tokenise text8.txt into token IDs (cached)
-    token_ids_path = CACHE_DIR / f"text8_token_ids_{vocab_timestamp}.npy"
+    # tokenise corpus into token IDs (cached)
+    token_ids_path = CACHE_DIR / f"{language}_{vocab_timestamp}.npy"
     if token_ids_path.exists():
         token_ids = np.load(token_ids_path, mmap_mode="r")
     else:
@@ -147,13 +160,13 @@ if is_bpe_vocab:
             cache[token] = ids
             return ids
 
-        with open(HERE / "./data/welsh_text.txt") as f:
+        with open(corpus_path) as f:
             corpus = f.read()
 
         total_token_ids = sum(int(info["count"]) for info in vocab.values())
         token_ids = np.empty(total_token_ids, dtype=np.uint16 if V_full < 65536 else np.int32)
         pos = 0
-        for token in tqdm(iter_pre_tokens(corpus), desc="tokenising text8", unit="token"):
+        for token in tqdm(iter_pre_tokens(corpus), desc=f"tokenising {language}", unit="token"):
             ids = bpe_encode(token)
             token_ids[pos : pos + len(ids)] = ids
             pos += len(ids)
@@ -169,7 +182,7 @@ if is_bpe_vocab:
 
 else:
     # for text
-    with open(HERE / "./data/welsh_text.txt") as f:
+    with open(corpus_path) as f:
         corpus_text = f.read().split()
 
     # prune vocab
@@ -183,21 +196,11 @@ else:
 models_dir = HERE / "models"
 models_dir.mkdir(parents=True, exist_ok=True)
 
-# Set RESUME_FROM to None for a new model, "latest" to resume form most recent
-# checkpoint and to a given checkpoint path to resume training from said state.
-RESUME_FROM = None
-
-def latest_checkpoint(models_dir):
-    candidates = [p for p in models_dir.glob("*.ckpt")]
-    return max(candidates, key=lambda p: p.stem)
-
-if RESUME_FROM == "latest":
-    checkpoint_path = latest_checkpoint(models_dir)
-elif RESUME_FROM is not None:
-    checkpoint_path = Path(RESUME_FROM)
+if resume_ckpt is not None:
+    checkpoint_path = resume_ckpt
 else:
     run_timestamp = datetime.now().strftime("%Y%m%d%H%M%S")
-    checkpoint_path = models_dir / f"{run_timestamp}.ckpt"
+    checkpoint_path = models_dir / f"{language}_{run_timestamp}.ckpt"
 
 if not is_bpe_vocab:
     # for probabilities pertaining to negative indices
@@ -237,11 +240,12 @@ def neg_sampling_loss(u, v, U, context_idx):
     return torch.mean(loss)
 
 if not is_bpe_vocab:
-    # to go straight from index in text8.txt to token index according to vocabulary
+    # to go straight from index in {run_language}.txt to token index according to vocabulary
     indeces_corpus_to_token = np.array(
         [token_to_index[word] for word in corpus_text if word in token_to_index], dtype=np.int32
     )
-subsample_seed = int(checkpoint_path.stem) % (2**32 - 1) if checkpoint_path.stem.isdigit() else 0
+ts = checkpoint_path.stem.split("_")[-1]
+subsample_seed = int(ts) % (2**32 - 1) if len(ts) == 14 and ts.isdigit() else 0
 subsample_rng = np.random.RandomState(subsample_seed)
 subsample_mask = subsample_rng.random_sample(size=len(indeces_corpus_to_token)) < subsample_keep_probs[indeces_corpus_to_token]
 indeces_corpus_to_token = indeces_corpus_to_token[subsample_mask]
@@ -251,7 +255,7 @@ E = nn.Embedding(V, d).to(device)
 U = nn.Embedding(V, d).to(device)
 optimizer = optim.Adam(list(E.parameters()) + list(U.parameters()), lr=lr)
 start_epoch = 0
-if RESUME_FROM is not None:
+if resume_ckpt is not None:
     ckpt = torch.load(checkpoint_path, map_location=device, weights_only=False)
     E.load_state_dict(ckpt["E_state_dict"])
     U.load_state_dict(ckpt["U_state_dict"])
@@ -324,7 +328,7 @@ for epoch in range(start_epoch, epochs):
             "index_to_token": index_to_token,
             "d_model": d,
             "is_bpe_vocab": bool(is_bpe_vocab),
-            "bpe_vocab_path": maybe_relpath(Path(VOCAB_PATH)) if is_bpe_vocab else None,
+            "bpe_vocab_path": maybe_relpath(vocab_path) if is_bpe_vocab else None,
             "bpe_encodings_path": maybe_relpath(encodings_path) if is_bpe_vocab else None,
             "epoch": epoch + 1,
             "rng_state_py": random.getstate(),

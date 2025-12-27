@@ -4,6 +4,6 @@ import pandas
 
 HERE = Path(__file__).resolve().parent
 
-data = pandas.read_csv(HERE / "data" / "welsh_text.csv")['welsh']
+data = pandas.read_csv(HERE / "data" / "welsh.csv")["welsh"]
 
-(HERE / "data" / "welsh_text.txt").write_text(" ".join(data.astype(str)), encoding="utf-8")
+(HERE / "data" / "welsh.txt").write_text(" ".join(data.astype(str)), encoding="utf-8")

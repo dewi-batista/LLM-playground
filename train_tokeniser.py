@@ -10,6 +10,7 @@ import heapq
 import json
 import pickle
 import re
+import sys
 
 HERE = Path(__file__).resolve().parent
 ARTIFACTS_DIR = HERE / "artifacts" / "tokenisers"
@@ -83,7 +84,7 @@ def iter_pre_tokens(sequence: str):
 # NOTE: The application of this function assumes that there are sufficiently
 # many pairs in the corpus itself. Bare this in mind when unit testing.
 
-def learn_encodings(corpus):
+def learn_encodings(corpus, language):
     # NOTE: This learns BPE merges using word-type counts, rather than scanning
     # every token occurrence in the corpus. Same result but faster.
     run_timestamp = datetime.now().strftime("%Y%m%d%H%M%S")
@@ -182,7 +183,7 @@ def learn_encodings(corpus):
         }
         for token_id in range(V)
     }
-    with open(ARTIFACTS_DIR / f"vocabulary_bpe_{run_timestamp}.json", "w") as f:
+    with open(ARTIFACTS_DIR / f"{language}_{run_timestamp}.json", "w") as f:
         f.write("{\n")
         for token_id in range(V):
             key = str(token_id)
@@ -190,10 +191,18 @@ def learn_encodings(corpus):
             comma = "," if token_id < V - 1 else ""
             f.write(f'    "{key}": {subdict}{comma}\n')
         f.write("}\n")
-    with open(ARTIFACTS_DIR / f"encodings_{run_timestamp}.pkl", "wb") as f:
+    with open(ARTIFACTS_DIR / f"{language}_{run_timestamp}.pkl", "wb") as f:
         pickle.dump(encodings, f)
 
 if __name__ == "__main__":
-    with open(HERE / "./data/welsh_text.txt") as f:
+    if len(sys.argv) != 3 or sys.argv[1] in {"-h", "--help"}:
+        print(f"usage: python {Path(__file__).name} <language> <corpus_txt>")
+        raise SystemExit(1)
+
+    language = sys.argv[1]
+    corpus_path = Path(sys.argv[2])
+    if not corpus_path.is_absolute():
+        corpus_path = HERE / corpus_path
+    with open(corpus_path) as f:
         corpus = f.read()
-    learn_encodings(corpus)
+    learn_encodings(corpus, language)
