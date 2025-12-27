@@ -1,9 +1,11 @@
 from pathlib import Path
 
 import json
+import pickle
 import sys
 import torch
 import torch.nn.functional as F
+from itertools import pairwise
 
 HERE = Path(__file__).resolve().parent
 
@@ -87,6 +89,101 @@ def most_similar_vec(vec, W, index_to_token, topk: int, exclude_indeces=()):
     values, indices = torch.topk(sims, k=topk)
     return [(index_to_token[int(i)], float(v)) for v, i in zip(values, indices)]
 
+bpe_encode = None
+token_bytes = None
+
+def load_bpe_encodings_from_ckpt(ckpt):
+    enc_path = ckpt.get("bpe_encodings_path")
+    if not enc_path:
+        return None
+    p = Path(enc_path)
+    if not p.is_absolute():
+        p = HERE / p
+    with open(p, "rb") as f:
+        return pickle.load(f)
+
+def build_bpe_token_bytes(encodings):
+    token_bytes = [bytes([i]) for i in range(256)] + [b""] * len(encodings)
+    for pair, new_token in encodings:
+        a, b = pair
+        token_bytes[new_token] = token_bytes[a] + token_bytes[b]
+    return token_bytes
+
+def make_bpe_encoder(encodings):
+    merges = {tuple(pair): new_token for pair, new_token in encodings}
+    ranks = {tuple(pair): i for i, (pair, _) in enumerate(encodings)}
+    cache = {}
+
+    def encode(text: str):
+        if text in cache:
+            return cache[text]
+        ids = list(text.encode("utf-8"))
+        while True:
+            best_pair = None
+            best_rank = None
+            for p in pairwise(ids):
+                r = ranks.get(p)
+                if r is None:
+                    continue
+                if best_rank is None or r < best_rank:
+                    best_rank = r
+                    best_pair = p
+            if best_pair is None:
+                break
+            new_token = merges[best_pair]
+            merged = []
+            i = 0
+            while i < len(ids):
+                if i < len(ids) - 1 and (ids[i], ids[i + 1]) == best_pair:
+                    merged.append(new_token)
+                    i += 2
+                else:
+                    merged.append(ids[i])
+                    i += 1
+            ids = merged
+        cache[text] = ids
+        return ids
+
+    return encode
+
+def vector_for_text(text: str, W, token_to_index):
+    if text in token_to_index:
+        idx = token_to_index[text]
+        return W[idx], [idx]
+
+    if bpe_encode is None or token_bytes is None:
+        raise KeyError(text)
+
+    candidates = [text]
+    if not text.startswith(" "):
+        candidates.append(" " + text)
+
+    best_vec = None
+    best_used = None
+    best_covered = -1
+    for cand in candidates:
+        ids = bpe_encode(cand)
+        used = []
+        vec = torch.zeros_like(W[0])
+        covered = 0
+        for token_id in ids:
+            s = token_bytes[token_id].decode("utf-8", errors="backslashreplace")
+            idx = token_to_index.get(s)
+            if idx is None:
+                continue
+            vec = vec + W[idx]
+            used.append(idx)
+            covered += 1
+        if covered > best_covered:
+            best_covered = covered
+            best_vec = vec
+            best_used = used
+
+    if best_covered <= 0:
+        raise KeyError(text)
+
+    return F.normalize(best_vec, dim=0), best_used
+
 
 def parse_expression(tokens, token_to_index, W):
     # Example tokens: ["king", "-", "man", "+", "woman"]
@@ -103,11 +200,9 @@ def parse_expression(tokens, token_to_index, W):
         if t == "-":
             sign = -1.0
             continue
-        if t not in token_to_index:
-            raise KeyError(t)
-        idx = token_to_index[t]
-        vec = vec + (sign * W[idx])
-        used.append(idx)
+        subvec, subused = vector_for_text(t, W, token_to_index)
+        vec = vec + (sign * subvec)
+        used.extend(subused)
         sign = 1.0
 
     return F.normalize(vec, dim=0), used
@@ -134,6 +229,11 @@ ckpt = torch.load(checkpoint_path, map_location="cpu", weights_only=False)
 token_to_index, index_to_token = load_vocab_from_ckpt(ckpt, VOCAB_PATH)
 W = load_embeddings(ckpt, which=WHICH)
 
+encodings = load_bpe_encodings_from_ckpt(ckpt)
+if encodings is not None:
+    token_bytes = build_bpe_token_bytes(encodings)
+    bpe_encode = make_bpe_encoder(encodings)
+
 if query_words:
     if any(t in {"+", "-"} for t in query_words) or (len(query_words) == 1 and any(ch in query_words[0] for ch in "+-")):
         vec, used = parse_expression(query_words, token_to_index, W)
@@ -145,10 +245,12 @@ if query_words:
 
     if len(query_words) == 1:
         word = query_words[0]
-        if word not in token_to_index:
+        try:
+            vec, used = vector_for_text(word, W, token_to_index)
+        except KeyError:
             print(f"{word}: <not in vocab>")
             raise SystemExit(0)
-        nn = most_similar(word, W, token_to_index, index_to_token, topk=TOPK)
+        nn = most_similar_vec(vec, W, index_to_token, topk=TOPK, exclude_indeces=used)
         nn_str = ", ".join(f"{w} ({s:.3f})" for w, s in nn)
         print(f"Neighbors (which={WHICH}, topk={TOPK})")
         print(f"{word}: {nn_str}")
@@ -156,11 +258,14 @@ if query_words:
 
     if len(query_words) == 2:
         w1, w2 = query_words
-        if w1 not in token_to_index or w2 not in token_to_index:
-            missing = [w for w in (w1, w2) if w not in token_to_index]
-            print(f"<not in vocab>: {missing}")
+        try:
+            v1, _ = vector_for_text(w1, W, token_to_index)
+            v2, _ = vector_for_text(w2, W, token_to_index)
+        except KeyError as e:
+            missing = e.args[0] if e.args else str(e)
+            print(f"<not in vocab>: {[missing]}")
             raise SystemExit(0)
-        sim = float(torch.dot(W[token_to_index[w1]], W[token_to_index[w2]]).item())
+        sim = float(torch.dot(v1, v2).item())
         print(f"cosine({w1}, {w2}) = {sim:.4f}")
         raise SystemExit(0)
 
@@ -182,10 +287,12 @@ words = [
 
 print(f"Neighbors (which={WHICH}, topk={TOPK})")
 for word in words:
-    if word not in token_to_index:
+    try:
+        vec, used = vector_for_text(word, W, token_to_index)
+    except KeyError:
         print(f"- {word}: <not in vocab>")
         continue
-    nn = most_similar(word, W, token_to_index, index_to_token, topk=TOPK)
+    nn = most_similar_vec(vec, W, index_to_token, topk=TOPK, exclude_indeces=used)
     nn_str = ", ".join(f"{w} ({s:.3f})" for w, s in nn)
     print(f"- {word}: {nn_str}")
 
@@ -195,10 +302,11 @@ analogies = [
     ("france", "paris", "italy", "rome"),
 ]
 for a, b, c, expected in analogies:
-    missing = [w for w in (a, b, c) if w not in token_to_index]
-    if missing:
-        print(f"- {b} - {a} + {c} = {expected}: <missing {missing}>")
+    try:
+        vec, used = parse_expression([b, "-", a, "+", c], token_to_index, W)
+    except KeyError:
+        print(f"- {b} - {a} + {c} = {expected}: <missing>")
         continue
-    preds = analogy(a, b, c, W, token_to_index, index_to_token, topk=TOPK)
+    preds = most_similar_vec(vec, W, index_to_token, topk=TOPK, exclude_indeces=used)
     pred_str = ", ".join(f"{w} ({s:.3f})" for w, s in preds)
     print(f"- {b} - {a} + {c} = {expected}: {pred_str}")
