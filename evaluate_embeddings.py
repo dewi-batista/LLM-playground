@@ -92,6 +92,18 @@ def most_similar_vec(vec, W, index_to_token, topk: int, exclude_indeces=()):
 bpe_encode = None
 token_bytes = None
 
+def cli_to_token(text: str) -> str:
+    if text.startswith("_"):
+        n = len(text) - len(text.lstrip("_"))
+        return (" " * n) + text[n:]
+    return text
+
+def token_to_cli(text: str) -> str:
+    if text.startswith(" "):
+        n = len(text) - len(text.lstrip(" "))
+        return ("_" * n) + text[n:]
+    return text
+
 def load_bpe_encodings_from_ckpt(ckpt):
     enc_path = ckpt.get("bpe_encodings_path")
     if not enc_path:
@@ -200,7 +212,7 @@ def parse_expression(tokens, token_to_index, W):
         if t == "-":
             sign = -1.0
             continue
-        subvec, subused = vector_for_text(t, W, token_to_index)
+        subvec, subused = vector_for_text(cli_to_token(t), W, token_to_index)
         vec = vec + (sign * subvec)
         used.extend(subused)
         sign = 1.0
@@ -224,6 +236,8 @@ else:
     checkpoint_path = latest_checkpoint(MODELS_DIR)
     query_words = args
 
+query_words = [cli_to_token(w) if w not in {"+", "-"} else w for w in query_words]
+
 print(f"Using checkpoint: {checkpoint_path}")
 ckpt = torch.load(checkpoint_path, map_location="cpu", weights_only=False)
 token_to_index, index_to_token = load_vocab_from_ckpt(ckpt, VOCAB_PATH)
@@ -238,8 +252,9 @@ if query_words:
     if any(t in {"+", "-"} for t in query_words) or (len(query_words) == 1 and any(ch in query_words[0] for ch in "+-")):
         vec, used = parse_expression(query_words, token_to_index, W)
         nn = most_similar_vec(vec, W, index_to_token, topk=TOPK, exclude_indeces=used)
-        nn_str = ", ".join(f"{w} ({s:.3f})" for w, s in nn)
-        print(f"Expr: {' '.join(query_words)}")
+        nn_str = ", ".join(f"{token_to_cli(w)} ({s:.3f})" for w, s in nn)
+        expr_str = " ".join(t if t in {"+", "-"} else token_to_cli(t) for t in query_words)
+        print(f"Expr: {expr_str}")
         print(nn_str)
         raise SystemExit(0)
 
@@ -248,12 +263,12 @@ if query_words:
         try:
             vec, used = vector_for_text(word, W, token_to_index)
         except KeyError:
-            print(f"{word}: <not in vocab>")
+            print(f"{token_to_cli(word)}: <not in vocab>")
             raise SystemExit(0)
         nn = most_similar_vec(vec, W, index_to_token, topk=TOPK, exclude_indeces=used)
-        nn_str = ", ".join(f"{w} ({s:.3f})" for w, s in nn)
+        nn_str = ", ".join(f"{token_to_cli(w)} ({s:.3f})" for w, s in nn)
         print(f"Neighbors (which={WHICH}, topk={TOPK})")
-        print(f"{word}: {nn_str}")
+        print(f"{token_to_cli(word)}: {nn_str}")
         raise SystemExit(0)
 
     if len(query_words) == 2:
@@ -263,16 +278,16 @@ if query_words:
             v2, _ = vector_for_text(w2, W, token_to_index)
         except KeyError as e:
             missing = e.args[0] if e.args else str(e)
-            print(f"<not in vocab>: {[missing]}")
+            print(f"<not in vocab>: {[token_to_cli(missing)]}")
             raise SystemExit(0)
         sim = float(torch.dot(v1, v2).item())
-        print(f"cosine({w1}, {w2}) = {sim:.4f}")
+        print(f"cosine({token_to_cli(w1)}, {token_to_cli(w2)}) = {sim:.4f}")
         raise SystemExit(0)
 
     print("Provide 1 word for neighbors, 2 words for cosine similarity, or use +/- for arithmetic.")
     raise SystemExit(0)
 
-words = [
+base_words = [
     "king",
     "queen",
     "man",
@@ -284,29 +299,33 @@ words = [
     "london",
     "england",
 ]
+words = [" " + w for w in base_words] if encodings is not None else base_words
 
 print(f"Neighbors (which={WHICH}, topk={TOPK})")
 for word in words:
     try:
         vec, used = vector_for_text(word, W, token_to_index)
     except KeyError:
-        print(f"- {word}: <not in vocab>")
+        print(f"- {token_to_cli(word)}: <not in vocab>")
         continue
     nn = most_similar_vec(vec, W, index_to_token, topk=TOPK, exclude_indeces=used)
-    nn_str = ", ".join(f"{w} ({s:.3f})" for w, s in nn)
-    print(f"- {word}: {nn_str}")
+    nn_str = ", ".join(f"{token_to_cli(w)} ({s:.3f})" for w, s in nn)
+    print(f"- {token_to_cli(word)}: {nn_str}")
 
 print("\nAnalogies (b - a + c)")
-analogies = [
+base_analogies = [
     ("man", "king", "woman", "queen"),
     ("france", "paris", "italy", "rome"),
 ]
+analogies = [tuple((" " + w) for w in t) for t in base_analogies] if encodings is not None else base_analogies
 for a, b, c, expected in analogies:
     try:
         vec, used = parse_expression([b, "-", a, "+", c], token_to_index, W)
     except KeyError:
-        print(f"- {b} - {a} + {c} = {expected}: <missing>")
+        print(
+            f"- {token_to_cli(b)} - {token_to_cli(a)} + {token_to_cli(c)} = {token_to_cli(expected)}: <missing>"
+        )
         continue
     preds = most_similar_vec(vec, W, index_to_token, topk=TOPK, exclude_indeces=used)
-    pred_str = ", ".join(f"{w} ({s:.3f})" for w, s in preds)
-    print(f"- {b} - {a} + {c} = {expected}: {pred_str}")
+    pred_str = ", ".join(f"{token_to_cli(w)} ({s:.3f})" for w, s in preds)
+    print(f"- {token_to_cli(b)} - {token_to_cli(a)} + {token_to_cli(c)} = {token_to_cli(expected)}: {pred_str}")
