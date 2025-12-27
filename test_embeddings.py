@@ -9,7 +9,8 @@ from itertools import pairwise
 
 HERE = Path(__file__).resolve().parent
 
-VOCAB_PATH = HERE / "artifacts" / "vocabulary_bpe_20251227142719.json"
+VOCAB_PATH = HERE / "artifacts" / "tokenisers" / "vocabulary_bpe_20251227142719.json"
+assert VOCAB_PATH.exists()
 if not VOCAB_PATH.exists():
     VOCAB_PATH = HERE / "artifacts" / "vocabulary_full_words.json"
 MODELS_DIR = HERE / "models"  # produced by train_embeddings.py

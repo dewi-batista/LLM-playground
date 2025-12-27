@@ -147,7 +147,7 @@ if is_bpe_vocab:
             cache[token] = ids
             return ids
 
-        with open(HERE / "./data/welsh-text.txt") as f:
+        with open(HERE / "./data/welsh_text.txt") as f:
             corpus = f.read()
 
         total_token_ids = sum(int(info["count"]) for info in vocab.values())
@@ -169,7 +169,7 @@ if is_bpe_vocab:
 
 else:
     # for text
-    with open(HERE / "./data/welsh-text.txt") as f:
+    with open(HERE / "./data/welsh_text.txt") as f:
         corpus_text = f.read().split()
 
     # prune vocab
