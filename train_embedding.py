@@ -57,7 +57,6 @@ lr = 1e-3
 min_count = 5
 steps_per_epoch = 100_000
 subsample_t = 1e-5
-total_steps = epochs * steps_per_epoch
 window = 5
 
 def iter_pre_tokens(sequence: str):
@@ -217,7 +216,7 @@ for epoch in range(start_epoch, epochs):
     pbar = tqdm(range(steps_per_epoch), desc=f"epoch {epoch + 1}/{epochs}", unit="step")
     for step in pbar:
         global_step = epoch * steps_per_epoch + step
-        current_lr = lr * (1.0 - (global_step / total_steps))
+        current_lr = lr * (1.0 - (global_step / (epochs * steps_per_epoch)))
         for group in optimizer.param_groups:
             group["lr"] = current_lr
         
