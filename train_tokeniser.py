@@ -16,8 +16,8 @@ HERE = Path(__file__).resolve().parent
 MODELS_DIR = HERE / "models"
 MODELS_DIR.mkdir(parents=True, exist_ok=True)
 
-# hyperparameters
-V_MAX = 30_000
+# hyperparams
+vocab_size_max = 30_000
 
 # NOTE: GPT-2's tokeniser preserves exact white space but we won't. During pre-
 # tokenisation, we remove trailing whitespaces then split; "banana  orange" ->
@@ -35,8 +35,7 @@ def tokens_UTF(tokens: list) -> list:
         tokens[i] = list(tokens[i].encode("utf-8"))
     return tokens
 
-# PURPOSE-DEBUG: print([[chr(token) for token in words] for words in corpus_utf])
-def tokenise(corpus: list, encodings: list) -> list: # this assume corpus is already encoded
+def tokenise(corpus: list, encodings: list) -> list:
     if type(corpus) == str:
         corpus = tokens_UTF(pre_tokenise(corpus))
     for encoding in encodings:
@@ -48,7 +47,7 @@ def tokenise(corpus: list, encodings: list) -> list: # this assume corpus is alr
                     token_UTF.pop(i+1)
     return corpus
 
-# merge one pair across one word (left-to-right, non-overlapping)
+# merge a pair across a word (left-to-right, non-overlapping)
 def merge_pair(word: list, pair: tuple, new_token: int) -> list:
     a, b = pair
     merged = []
@@ -56,7 +55,7 @@ def merge_pair(word: list, pair: tuple, new_token: int) -> list:
     while i < len(word):
         if i < len(word) - 1 and word[i] == a and word[i + 1] == b:
             merged.append(new_token)
-            i += 2
+            i += 2 # to account for skipping th eindex of b
         else:
             merged.append(word[i])
             i += 1
@@ -69,12 +68,16 @@ def pair_counts(word: list) -> dict:
         counts[pair] = counts.get(pair, 0) + 1
     return counts
 
+# like pre_tokenise() applied one-by-one as a generator
 def iter_pre_tokens(sequence: str):
-    # like pre_tokenise(), but as a generator (avoids allocating the full split list)
     sequence = sequence.strip()
     first = True
     for match in re.finditer(r"\S+", sequence):
+        # NOTE: .group(0) is the entire matched text, so the whole \S+ run.
+        # re.finditer(r"\S+", sequence) is a bit like .split() as a generator.
         token = match.group(0)
+        
+        # first token does not get pre-posed with a whitespace
         if first:
             yield token
             first = False
@@ -87,6 +90,7 @@ def iter_pre_tokens(sequence: str):
 def learn_encodings(corpus, language):
     # NOTE: This learns BPE merges using word-type counts, rather than scanning
     # every token occurrence in the corpus. Same result but faster.
+
     run_timestamp = datetime.now().strftime("%Y%m%d%H%M%S")
     run_dir = MODELS_DIR / language / run_timestamp
     run_dir.mkdir(parents=True, exist_ok=True)
@@ -109,7 +113,7 @@ def learn_encodings(corpus, language):
     heapq.heapify(heap)
 
     encodings = []  # items are of the form [[a, b], new_token]
-    for i in range(V_MAX):
+    for i in range(vocab_size_max):
 
         while heap:
             neg_freq, pair = heapq.heappop(heap)

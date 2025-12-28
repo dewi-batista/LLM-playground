@@ -46,8 +46,9 @@ with open(encodings_path, "rb") as f:
 
 with open(vocab_path) as f:
     vocab = json.load(f)
+vocab_size = len(vocab)
 
-# model hyperparams
+# hyperparams
 batch_size = 8_192
 d = int(config["model"]["d_model"])
 epochs = 1 # DEFAULT: 10
@@ -70,8 +71,8 @@ def iter_pre_tokens(sequence: str):
         else:
             yield " " + token
 
-V_full = len(vocab)
-keep_token_ids = [i for i in range(V_full) if int(vocab[str(i)]["count"]) >= min_count]
+# prune vocab of sufficiently-infrequent tokens
+keep_token_ids = [i for i in range(vocab_size) if int(vocab[str(i)]["count"]) >= min_count]
 index_to_token = [vocab[str(i)]["string"] for i in keep_token_ids]
 V = len(index_to_token)
 
@@ -85,7 +86,7 @@ for idx, token_id in enumerate(keep_token_ids):
 neg_probs /= neg_probs.sum()
 neg_probs_t = torch.as_tensor(neg_probs, dtype=torch.float, device=device)
 
-# tokenise corpus into token IDs (cached)
+# cache the tokenisation of the corpus into token IDs (if not done already)
 if token_ids_path.exists():
     token_ids = np.load(token_ids_path, mmap_mode="r")
 else:
@@ -127,7 +128,7 @@ else:
         corpus = f.read()
 
     total_token_ids = sum(int(info["count"]) for info in vocab.values())
-    token_ids = np.empty(total_token_ids, dtype=np.uint16 if V_full < 65536 else np.int32)
+    token_ids = np.empty(total_token_ids, dtype=np.uint16 if vocab_size < 65_536 else np.int32)
     pos = 0
     for token in tqdm(iter_pre_tokens(corpus), desc=f"tokenising {language}", unit="token"):
         ids = bpe_encode(token)
@@ -137,7 +138,7 @@ else:
     np.save(token_ids_path, token_ids)
 
 # map token IDs to embedding indices (and drop pruned tokens)
-token_id_to_index = np.full(V_full, -1, dtype=np.int32)
+token_id_to_index = np.full(vocab_size, -1, dtype=np.int32)
 for i, token_id in enumerate(keep_token_ids):
     token_id_to_index[token_id] = i
 indeces_corpus_to_token = token_id_to_index[token_ids]
