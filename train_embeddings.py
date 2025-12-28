@@ -51,11 +51,11 @@ vocab_size = len(vocab)
 # hyperparams
 batch_size = 8_192
 d = int(config["model"]["d_model"])
-epochs = 1 # DEFAULT: 10
+epochs = 10
 k = 10
 lr = 1e-3
 min_count = 5
-steps_per_epoch = 100 # DEFAULT: 100_000
+steps_per_epoch = 100_000
 subsample_t = 1e-5
 total_steps = epochs * steps_per_epoch
 window = 5
@@ -249,9 +249,6 @@ for epoch in range(start_epoch, epochs):
             pbar.set_postfix(recent_loss=f"{log_loss / log_steps:.4f}")
             log_loss = 0.0
             log_steps = 0
-
-    avg_loss = total_loss / steps_per_epoch
-    tqdm.write(f"epoch {epoch + 1}/{epochs} avg_loss={avg_loss:.4f}")
     
     # NOTE: What's saved is for identical continuation. This assumes that saved
     # checkpoints correspond to fully completed epochs.
