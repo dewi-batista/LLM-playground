@@ -20,18 +20,13 @@ HERE = Path(__file__).resolve().parent
 MODELS_DIR = HERE / "models"
 MODELS_DIR.mkdir(parents=True, exist_ok=True)
 
+# command line input
 if len(sys.argv) < 3 or sys.argv[1] in {"-h", "--help"}:
     print(f"usage: python {Path(__file__).name} <language> <vocab_timestamp> [model_number]")
     raise SystemExit(1)
-
 language = sys.argv[1]
 timestamp = sys.argv[2]
-model_number = None
-if len(sys.argv) > 3:
-    if not sys.argv[3].isdigit():
-        print(f"usage: python {Path(__file__).name} <language> <vocab_timestamp> [model_number]")
-        raise SystemExit(1)
-    model_number = int(sys.argv[3])
+model_number = int(sys.argv[3]) if (len(sys.argv) > 3) else None
 
 run_dir = MODELS_DIR / language / timestamp
 run_dir.mkdir(parents=True, exist_ok=True)
@@ -63,8 +58,6 @@ device = torch.device("cuda") if torch.cuda.is_available() else torch.device("cp
 with open(vocab_path) as f:
     vocab = json.load(f)
 
-is_bpe_vocab = all(k.isdigit() for k in vocab.keys())
-
 # for config
 with open(HERE / "./config/config.yaml", "r") as f:
     config = yaml.safe_load(f)
@@ -72,11 +65,11 @@ with open(HERE / "./config/config.yaml", "r") as f:
 # model hyperparams
 batch_size = 8_192
 d = int(config["model"]["d_model"])
-epochs = 5
+epochs = 1
 k = 10
 lr = 1e-3
 min_count = 5
-steps_per_epoch = 100_000
+steps_per_epoch = 100 # 100_000
 subsample_t = 1e-5
 total_steps = epochs * steps_per_epoch
 window = 5
@@ -95,105 +88,81 @@ def iter_pre_tokens(sequence: str):
         else:
             yield " " + token
 
-if is_bpe_vocab:
-    with open(encodings_path, "rb") as f:
-        encodings = pickle.load(f)
+with open(encodings_path, "rb") as f:
+    encodings = pickle.load(f)
 
-    V_full = len(vocab)
-    keep_token_ids = [i for i in range(V_full) if int(vocab[str(i)]["count"]) >= min_count]
-    index_to_token = [vocab[str(i)]["string"] for i in keep_token_ids]
-    V = len(index_to_token)
+V_full = len(vocab)
+keep_token_ids = [i for i in range(V_full) if int(vocab[str(i)]["count"]) >= min_count]
+index_to_token = [vocab[str(i)]["string"] for i in keep_token_ids]
+V = len(index_to_token)
 
-    # for probabilities pertaining to negative indices
-    neg_probs = np.zeros(V, dtype=np.float64)
-    counts = np.zeros(V, dtype=np.int64)
-    for idx, token_id in enumerate(keep_token_ids):
-        info = vocab[str(token_id)]
-        neg_probs[idx] = float(info["neg_prob"])
-        counts[idx] = int(info["count"])
-    neg_probs /= neg_probs.sum()
-    neg_probs_t = torch.as_tensor(neg_probs, dtype=torch.float, device=device)
+# for probabilities pertaining to negative indices
+neg_probs = np.zeros(V, dtype=np.float64)
+counts = np.zeros(V, dtype=np.int64)
+for idx, token_id in enumerate(keep_token_ids):
+    info = vocab[str(token_id)]
+    neg_probs[idx] = float(info["neg_prob"])
+    counts[idx] = int(info["count"])
+neg_probs /= neg_probs.sum()
+neg_probs_t = torch.as_tensor(neg_probs, dtype=torch.float, device=device)
 
-    # tokenise corpus into token IDs (cached)
-    if token_ids_path.exists():
-        token_ids = np.load(token_ids_path, mmap_mode="r")
-    else:
-        merges = {tuple(pair): new_token for pair, new_token in encodings}
-        ranks = {tuple(pair): i for i, (pair, _) in enumerate(encodings)}
-        cache = {}
-
-        def bpe_encode(token: str):
-            if token in cache:
-                return cache[token]
-            ids = list(token.encode("utf-8"))
-            while True:
-                best_pair = None
-                best_rank = None
-                for p in pairwise(ids):
-                    r = ranks.get(p)
-                    if r is None:
-                        continue
-                    if best_rank is None or r < best_rank:
-                        best_rank = r
-                        best_pair = p
-                if best_pair is None:
-                    break
-                new_token = merges[best_pair]
-                merged = []
-                i = 0
-                while i < len(ids):
-                    if i < len(ids) - 1 and (ids[i], ids[i + 1]) == best_pair:
-                        merged.append(new_token)
-                        i += 2
-                    else:
-                        merged.append(ids[i])
-                        i += 1
-                ids = merged
-            cache[token] = ids
-            return ids
-
-        with open(corpus_path) as f:
-            corpus = f.read()
-
-        total_token_ids = sum(int(info["count"]) for info in vocab.values())
-        token_ids = np.empty(total_token_ids, dtype=np.uint16 if V_full < 65536 else np.int32)
-        pos = 0
-        for token in tqdm(iter_pre_tokens(corpus), desc=f"tokenising {language}", unit="token"):
-            ids = bpe_encode(token)
-            token_ids[pos : pos + len(ids)] = ids
-            pos += len(ids)
-        token_ids = token_ids[:pos]
-        np.save(token_ids_path, token_ids)
-
-    # map token IDs to embedding indices (and drop pruned tokens)
-    token_id_to_index = np.full(V_full, -1, dtype=np.int32)
-    for i, token_id in enumerate(keep_token_ids):
-        token_id_to_index[token_id] = i
-    indeces_corpus_to_token = token_id_to_index[token_ids]
-    indeces_corpus_to_token = indeces_corpus_to_token[indeces_corpus_to_token >= 0]
-
+# tokenise corpus into token IDs (cached)
+if token_ids_path.exists():
+    token_ids = np.load(token_ids_path, mmap_mode="r")
 else:
-    # for text
+    merges = {tuple(pair): new_token for pair, new_token in encodings}
+    ranks = {tuple(pair): i for i, (pair, _) in enumerate(encodings)}
+    cache = {}
+
+    def bpe_encode(token: str):
+        if token in cache:
+            return cache[token]
+        ids = list(token.encode("utf-8"))
+        while True:
+            best_pair = None
+            best_rank = None
+            for p in pairwise(ids):
+                r = ranks.get(p)
+                if r is None:
+                    continue
+                if best_rank is None or r < best_rank:
+                    best_rank = r
+                    best_pair = p
+            if best_pair is None:
+                break
+            new_token = merges[best_pair]
+            merged = []
+            i = 0
+            while i < len(ids):
+                if i < len(ids) - 1 and (ids[i], ids[i + 1]) == best_pair:
+                    merged.append(new_token)
+                    i += 2
+                else:
+                    merged.append(ids[i])
+                    i += 1
+            ids = merged
+        cache[token] = ids
+        return ids
+
     with open(corpus_path) as f:
-        corpus_text = f.read().split()
+        corpus = f.read()
 
-    # prune vocab
-    vocab_keep = [(int(info["index"]), word) for word, info in vocab.items() if int(info["count"]) >= min_count]
-    vocab_keep.sort(key=lambda x: x[0])
-    index_to_token = [word for _, word in vocab_keep]
-    token_to_index = {word: i for i, word in enumerate(index_to_token)}
-    V = len(index_to_token)
+    total_token_ids = sum(int(info["count"]) for info in vocab.values())
+    token_ids = np.empty(total_token_ids, dtype=np.uint16 if V_full < 65536 else np.int32)
+    pos = 0
+    for token in tqdm(iter_pre_tokens(corpus), desc=f"tokenising {language}", unit="token"):
+        ids = bpe_encode(token)
+        token_ids[pos : pos + len(ids)] = ids
+        pos += len(ids)
+    token_ids = token_ids[:pos]
+    np.save(token_ids_path, token_ids)
 
-if not is_bpe_vocab:
-    # for probabilities pertaining to negative indices
-    neg_probs = np.zeros(V, dtype=np.float64)
-    counts = np.zeros(V, dtype=np.int64)
-    for idx, word in enumerate(index_to_token):
-        info = vocab[word]
-        neg_probs[idx] = float(info["neg_prob"])
-        counts[idx] = int(info["count"])
-    neg_probs /= neg_probs.sum()
-    neg_probs_t = torch.as_tensor(neg_probs, dtype=torch.float, device=device)
+# map token IDs to embedding indices (and drop pruned tokens)
+token_id_to_index = np.full(V_full, -1, dtype=np.int32)
+for i, token_id in enumerate(keep_token_ids):
+    token_id_to_index[token_id] = i
+indeces_corpus_to_token = token_id_to_index[token_ids]
+indeces_corpus_to_token = indeces_corpus_to_token[indeces_corpus_to_token >= 0]
 
 # subsampling frequent words
 freqs = counts.astype(np.float64) / float(counts.sum())
@@ -221,11 +190,6 @@ def neg_sampling_loss(u, v, U, context_idx):
 
     return torch.mean(loss)
 
-if not is_bpe_vocab:
-    # to go straight from index in {run_language}.txt to token index according to vocabulary
-    indeces_corpus_to_token = np.array(
-        [token_to_index[word] for word in corpus_text if word in token_to_index], dtype=np.int32
-    )
 seed_base = int(timestamp) if timestamp.isdigit() and len(timestamp) == 14 else 0
 subsample_seed = (seed_base + int(model_number)) % (2**32 - 1)
 subsample_rng = np.random.RandomState(subsample_seed)
@@ -255,7 +219,7 @@ if resume:
 # NOTE: Epochs aren't actually needed here as there's no fixed dataset to
 # iterate over. What's implemented is entirely equivalent to instead performing
 # epochs * steps_per_epoch optimisation steps. Despite this, epochs are kept
-# for the convenience checkpointing loss, parameters, etc.
+# for the convenience of checkpointing the parameters, seeing losses, etc.
 
 for epoch in range(start_epoch, epochs):
     total_loss = 0.0
@@ -310,8 +274,8 @@ for epoch in range(start_epoch, epochs):
             "min_count": min_count,
             "index_to_token": index_to_token,
             "d_model": d,
-            "bpe_vocab_path": vocab_path
-            "bpe_encodings_path": encodings_path
+            "bpe_vocab_path": vocab_path,
+            "bpe_encodings_path": encodings_path,
             "epoch": epoch + 1,
             "rng_state_py": random.getstate(),
             "rng_state_np": np.random.get_state(),
@@ -320,5 +284,5 @@ for epoch in range(start_epoch, epochs):
         },
         checkpoint_path,
     )
-# keep this here do not indent!!!!
+# keep this here do not indent!!!
 tqdm.write(f"saved: {checkpoint_path}")
