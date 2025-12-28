@@ -1,11 +1,7 @@
-# data/*.txt
-# data/*.csv
-# data/*.zip
-
-*DS_store
 *.ckpt
-# *.pyc
-# *.pyo
+*DS_store
 
 __pycache__/
 .venv/
+
+_source.sh

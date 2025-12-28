@@ -1,0 +1,1 @@
+1. Change how states are saved using torch: all encodings are BPE now so the flag is redundant.

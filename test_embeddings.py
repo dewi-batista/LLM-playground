@@ -1,3 +1,10 @@
+# NOTE: READ THIS NOTE!!! When testing an embedding function, ENSURE that you
+# take into account whether or not you tokenise to both lower and upper case or
+# not. For example, if you use text8 then you'll only deal with lower case.
+# Similarity results are drastically different when you don't take this into
+# account. Trust me, I've spent many hours confused and debugging only to
+# realise that I wasn't taking this into account.
+
 from itertools import pairwise
 from pathlib import Path
 
@@ -258,10 +265,15 @@ if query_words:
     print("Provide 1 word for neighbors, 2 words for cosine similarity, or use +/- for arithmetic.")
     raise SystemExit(0)
 
-base_words = [
-    "king", "queen", "man", "woman", "paris", "france", "rome", "italy",
-    "london","england",
-]
+if language == "english":
+    base_words = [
+        "king", "queen", "man", "woman", "paris", "france", "rome", "italy",
+        "london","england",
+    ]
+elif language == "welsh":
+    base_words = [
+        "Brenin", "fenyw", "Ffrainc", "Rhufain",
+        ]
 words = [" " + w for w in base_words] if use_leading_space else base_words
 
 print(f"Neighbors (which={WHICH}, topk={TOPK})")
@@ -269,26 +281,36 @@ for word in words:
     try:
         vec, used = vector_for_text(word, W, token_to_index)
     except KeyError:
-        print(f"- {token_to_cli(word)}: <not in vocab>")
+        print(f"{token_to_cli(word)}: <not in vocab>")
         continue
     nn = most_similar_vec(vec, W, index_to_token, topk=TOPK, exclude_indeces=used)
     nn_str = ", ".join(f"{token_to_cli(w)} ({s:.3f})" for w, s in nn)
-    print(f"- {token_to_cli(word)}: {nn_str}")
+    print(f"{token_to_cli(word)}: {nn_str}")
 
 print("\nAnalogies (b - a + c)")
-base_analogies = [
-    ("man", "king", "woman", "queen"),
-    ("france", "paris", "italy", "rome"),
-]
+if language == "english":
+    base_analogies = [
+        ("man", "king", "woman", "queen"),
+        ("france", "paris", "italy", "rome"),
+        ("king", "kings", "queen", "queens"),
+        ("teacher", "teachers", "doctor", "doctors"),
+    ]
+if language == "welsh":
+    base_analogies = [
+        ("dyn", "Brenin", "fenyw", "Brenhines"),
+        ("Ffrainc", "Paris", "Sbaen", "Madrid"),
+        ("Brenin", "brenhinoedd", "Brenhines", "brenhinesau"),
+        ("athro", "athrawon", "meddyg", "meddygon")
+    ]
 analogies = [tuple((" " + w) for w in t) for t in base_analogies] if use_leading_space else base_analogies
 for a, b, c, expected in analogies:
     try:
         vec, used = parse_expression([b, "-", a, "+", c], token_to_index, W)
     except KeyError:
         print(
-            f"- {token_to_cli(b)} - {token_to_cli(a)} + {token_to_cli(c)} = {token_to_cli(expected)}: <missing>"
+            f"{token_to_cli(b)} - {token_to_cli(a)} + {token_to_cli(c)} = {token_to_cli(expected)}: <missing>"
         )
         continue
     preds = most_similar_vec(vec, W, index_to_token, topk=TOPK, exclude_indeces=used)
     pred_str = ", ".join(f"{token_to_cli(w)} ({s:.3f})" for w, s in preds)
-    print(f"- {token_to_cli(b)} - {token_to_cli(a)} + {token_to_cli(c)} = {token_to_cli(expected)}: {pred_str}")
+    print(f"{token_to_cli(b)} - {token_to_cli(a)} + {token_to_cli(c)} = {token_to_cli(expected)}: {pred_str}")
