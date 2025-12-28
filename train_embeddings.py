@@ -15,11 +15,6 @@ import torch.nn.functional as F
 import torch.optim as optim
 import yaml
 
-HERE = Path(__file__).resolve().parent
-
-MODELS_DIR = HERE / "models"
-MODELS_DIR.mkdir(parents=True, exist_ok=True)
-
 # command line input
 if len(sys.argv) < 3 or sys.argv[1] in {"-h", "--help"}:
     print(f"usage: python {Path(__file__).name} <language> <vocab_timestamp> [model_number]")
@@ -28,54 +23,41 @@ language = sys.argv[1]
 timestamp = sys.argv[2]
 model_number = int(sys.argv[3]) if (len(sys.argv) > 3) else None
 
-run_dir = MODELS_DIR / language / timestamp
-run_dir.mkdir(parents=True, exist_ok=True)
-
-corpus_path = HERE / "data" / f"{language}.txt"
-vocab_path = run_dir / f"{language}_{timestamp}.json"
-encodings_path = run_dir / f"{language}_{timestamp}.pkl"
-token_ids_path = run_dir / f"{language}_{timestamp}.npy"
-
-if model_number is None:
-    model_number = len(list(run_dir.glob(f"{language}_{timestamp}_*.ckpt"))) + 1
-    checkpoint_path = run_dir / f"{language}_{timestamp}_{model_number}.ckpt"
-    resume = False
-else:
-    checkpoint_path = run_dir / f"{language}_{timestamp}_{model_number}.ckpt"
-    resume = True
-
-def maybe_relpath(path: Path) -> str:
-    try:
-        return str(path.relative_to(HERE))
-    except ValueError:
-        return str(path)
-
 # NOTE: I learned recently of an "mps" device which some Apple MacBooks have.
 # Perhaps worth adding in future (my M1 MacBook Air blows).
 device = torch.device("cuda") if torch.cuda.is_available() else torch.device("cpu")
 
-# for vocab
-with open(vocab_path) as f:
-    vocab = json.load(f)
+# directory shenanigans
+HERE = Path(__file__).resolve().parent
 
-# for config
+run_dir = HERE / "models" / language / timestamp
+run_dir.mkdir(parents=True, exist_ok=True)
+
+corpus_path = HERE / "data" / f"{language}.txt"
+encodings_path = run_dir / f"{language}_{timestamp}.pkl"
+token_ids_path = run_dir / f"{language}_{timestamp}.npy"
+vocab_path = run_dir / f"{language}_{timestamp}.json"
+
 with open(HERE / "./config/config.yaml", "r") as f:
     config = yaml.safe_load(f)
+
+with open(encodings_path, "rb") as f:
+    encodings = pickle.load(f)
+
+with open(vocab_path) as f:
+    vocab = json.load(f)
 
 # model hyperparams
 batch_size = 8_192
 d = int(config["model"]["d_model"])
-epochs = 1
+epochs = 1 # DEFAULT: 10
 k = 10
 lr = 1e-3
 min_count = 5
-steps_per_epoch = 100 # 100_000
+steps_per_epoch = 100 # DEFAULT: 100_000
 subsample_t = 1e-5
 total_steps = epochs * steps_per_epoch
 window = 5
-
-# other hyperparams
-log_every = 1_000
 
 def iter_pre_tokens(sequence: str):
     sequence = sequence.strip()
@@ -87,9 +69,6 @@ def iter_pre_tokens(sequence: str):
             first = False
         else:
             yield " " + token
-
-with open(encodings_path, "rb") as f:
-    encodings = pickle.load(f)
 
 V_full = len(vocab)
 keep_token_ids = [i for i in range(V_full) if int(vocab[str(i)]["count"]) >= min_count]
@@ -190,6 +169,15 @@ def neg_sampling_loss(u, v, U, context_idx):
 
     return torch.mean(loss)
 
+# new ckpt if model number not passed as argument
+if model_number is None:
+    model_number = len(list(run_dir.glob(f"{language}_{timestamp}_*.ckpt"))) + 1
+    checkpoint_path = run_dir / f"{language}_{timestamp}_{model_number}.ckpt"
+    resume = False
+else:
+    checkpoint_path = run_dir / f"{language}_{timestamp}_{model_number}.ckpt"
+    resume = True
+
 seed_base = int(timestamp) if timestamp.isdigit() and len(timestamp) == 14 else 0
 subsample_seed = (seed_base + int(model_number)) % (2**32 - 1)
 subsample_rng = np.random.RandomState(subsample_seed)
@@ -255,7 +243,8 @@ for epoch in range(start_epoch, epochs):
         log_loss += loss_val
         log_steps += 1
 
-        if log_every > 0 and (step + 1) % log_every == 0:
+        log_every = 1_000
+        if (step + 1) % log_every == 0:
             pbar.set_postfix(recent_loss=f"{log_loss / log_steps:.4f}")
             log_loss = 0.0
             log_steps = 0
