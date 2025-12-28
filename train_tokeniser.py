@@ -99,7 +99,6 @@ def learn_encodings(corpus, language):
 
     words = [list(token.encode("utf-8")) for token in token_counts.keys()]
     word_counts = list(token_counts.values())
-    # print([chr(char) for char in words[-1]])
 
     pair_freqs = {}         # (a, b) -> total frequency (weighted by word count)
     pair_to_words = {}      # (a, b) -> set(word_id)
@@ -168,8 +167,8 @@ def learn_encodings(corpus, language):
             words[wid] = new_word
     
     # save encodings + token vocabulary (based on tokenised word counts)
-    V = 256 + len(encodings)
-    token_id_counts = [0] * V
+    vocab_size = 256 + len(encodings)
+    token_id_counts = [0] * vocab_size
     for word, count in zip(words, word_counts):
         for token_id in word:
             token_id_counts[token_id] += count
@@ -187,16 +186,16 @@ def learn_encodings(corpus, language):
             "string": token_bytes[token_id].decode("utf-8", errors="backslashreplace"),
             "neg_prob": (token_id_counts[token_id] ** 0.75) / Z,
         }
-        for token_id in range(V)
+        for token_id in range(vocab_size)
     }
     vocab_path = run_dir / f"{language}_{run_timestamp}.json"
     encodings_path = run_dir / f"{language}_{run_timestamp}.pkl"
     with open(vocab_path, "w") as f:
         f.write("{\n")
-        for token_id in range(V):
+        for token_id in range(vocab_size):
             key = str(token_id)
             subdict = json.dumps(vocab[key], ensure_ascii=False, separators=(", ", ": "))
-            comma = "," if token_id < V - 1 else ""
+            comma = "," if token_id < vocab_size - 1 else ""
             f.write(f'    "{key}": {subdict}{comma}\n')
         f.write("}\n")
     with open(encodings_path, "wb") as f:
@@ -204,14 +203,18 @@ def learn_encodings(corpus, language):
     print(f"saved: {run_dir}")
 
 if __name__ == "__main__":
+
+    # command line input
     if len(sys.argv) < 2 or sys.argv[1] in {"-h", "--help"}:
         print(f"usage: python {Path(__file__).name} <language> [corpus_txt]")
         raise SystemExit(1)
 
+    # we allow non-"<language>.txt" files for training, mostly for the future
     language = sys.argv[1]
     corpus_path = Path(sys.argv[2]) if len(sys.argv) > 2 else (HERE / "data" / f"{language}.txt")
     if not corpus_path.is_absolute():
         corpus_path = HERE / corpus_path
     with open(corpus_path) as f:
         corpus = f.read()
+
     learn_encodings(corpus, language)
