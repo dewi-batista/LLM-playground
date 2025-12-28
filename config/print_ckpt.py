@@ -1,8 +1,31 @@
-import sys
+from pathlib import Path
+
 import pprint
+import sys
 import torch
 
-ckpt = torch.load(sys.argv[1], map_location="cpu", weights_only=False)
+HERE = Path(__file__).resolve().parent
+MODELS_DIR = HERE.parent / "models"
+
+if len(sys.argv) < 3 or sys.argv[1] in {"-h", "--help"}:
+    print(f"usage: python {Path(__file__).name} <language> <timestamp> [model_number]")
+    raise SystemExit(1)
+
+language = sys.argv[1]
+timestamp = sys.argv[2]
+run_dir = MODELS_DIR / language / timestamp
+
+if len(sys.argv) > 3:
+    model_number = sys.argv[3]
+    ckpt_path = run_dir / f"{language}_{timestamp}_{model_number}.ckpt"
+else:
+    candidates = sorted(run_dir.glob(f"{language}_{timestamp}_*.ckpt"))
+    if len(candidates) != 1:
+        print(f"error: expected exactly 1 checkpoint in {run_dir} (pass model_number)")
+        raise SystemExit(1)
+    ckpt_path = candidates[0]
+
+ckpt = torch.load(ckpt_path, map_location="cpu", weights_only=False)
 
 DROP = {
     "E_state_dict", "U_state_dict", "optimizer_state_dict",

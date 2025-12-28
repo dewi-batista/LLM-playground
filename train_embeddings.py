@@ -310,9 +310,8 @@ for epoch in range(start_epoch, epochs):
             "min_count": min_count,
             "index_to_token": index_to_token,
             "d_model": d,
-            "is_bpe_vocab": bool(is_bpe_vocab),
-            "bpe_vocab_path": maybe_relpath(vocab_path) if is_bpe_vocab else None,
-            "bpe_encodings_path": maybe_relpath(encodings_path) if is_bpe_vocab else None,
+            "bpe_vocab_path": vocab_path
+            "bpe_encodings_path": encodings_path
             "epoch": epoch + 1,
             "rng_state_py": random.getstate(),
             "rng_state_np": np.random.get_state(),
