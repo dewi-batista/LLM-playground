@@ -1,3 +1,5 @@
+# TODO: Include "git yem" in start.sh file
+
 from cache_tokenisation import load_or_create_token_ids
 from datetime import datetime
 from pathlib import Path
@@ -130,11 +132,11 @@ def positional_encoding(seq_len, d_model, device):
 
     return pe
 
-E = nn.Embedding(V, d_model).to(device)
-model = TransformerBlock(d_model, d_ff, dropout).to(device)
-ln_f = nn.LayerNorm(d_model).to(device)
-U = nn.Linear(d_model, V, bias=False).to(device)
 dropout_embed = nn.Dropout(dropout).to(device)
+E = nn.Embedding(V, d_model).to(device)
+final_lay_norm = nn.LayerNorm(d_model).to(device)
+model = TransformerBlock(d_model, d_ff, dropout).to(device)
+U = nn.Linear(d_model, V, bias=False).to(device)
 
 # TODO: check that this is what it's intended to be (weight tying)
 U.weight = E.weight
@@ -143,9 +145,9 @@ pe = positional_encoding(seq_len, d_model, device=device)
 
 # NOTE: Does not include U.parameters() due to weight tying
 params = (
-    list(E.parameters()    ) +
-    list(model.parameters()) +
-    list(ln_f.parameters())
+    list(E.parameters()) +
+    list(final_lay_norm.parameters()) +
+    list(model.parameters())
 )
 optimizer = torch.optim.Adam(params, lr=lr)
 
@@ -172,7 +174,7 @@ for epoch in range(epochs):
         targets = torch.as_tensor(targets, dtype=torch.long, device=device)
 
         X = dropout_embed(E(context_window) + pe)
-        logits = U(ln_f(model(X)))
+        logits = U(final_lay_norm(model(X)))
 
         loss = F.cross_entropy(logits.reshape(-1, V), targets.reshape(-1))
         loss.backward()
@@ -192,7 +194,7 @@ for epoch in range(epochs):
         {
             "E_state_dict": E.state_dict(),
             "model_state_dict": model.state_dict(),
-            "ln_f_state_dict": ln_f.state_dict(),
+            "final_lay_norm_state_dict": final_lay_norm.state_dict(),
             "U_state_dict": U.state_dict(),
             "vocab_size": V,
             "min_count": min_count,
