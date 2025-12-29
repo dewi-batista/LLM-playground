@@ -48,7 +48,7 @@ with open(vocab_path) as f:
 vocab_size = len(vocab)
 
 # hyperparams
-sequence_len = 8
+seq_len = 8
 d = int(config["model"]["d_model"])
 d_ff = 64
 epochs = 1
@@ -71,7 +71,7 @@ for idx, token_id in enumerate(keep_token_ids):
 neg_probs /= neg_probs.sum()
 neg_probs_t = torch.as_tensor(neg_probs, dtype=torch.float, device=device)
 
-# TODO: make this caching its own script
+# TODO: make this caching its own script, like cache_tokenisation.py
 # load cached tokenisation of corpus into token IDs
 token_ids = np.load(token_ids_path, mmap_mode="r")
 
@@ -108,7 +108,7 @@ class TransformerBlock(nn.Module):
         K = self.W_K(X)
         V = self.W_V(X)
 
-        M = torch.triu(torch.full((sequence_len, sequence_len), float('-inf')), diagonal=1).to(device)
+        M = torch.triu(torch.full((seq_len, seq_len), float('-inf')), diagonal=1).to(device)
         A = torch.softmax(Q @ K.transpose(-2, -1) / np.sqrt(d) + M, dim=-1)
         O = A @ V
         H_1 = self.ln1(O + X)
@@ -117,24 +117,27 @@ class TransformerBlock(nn.Module):
         H_3 = self.ln2(H_2 + H_1)
         return H_3
 
-# TODO: parallelise to output (n x d) instead of (1 x d) now
-def positional_encoding(position):
-    positions = []
-    for i in range(d):
-        to_be_sinusoided = position / pow(10_000, 2 * (i // 2) / d)
-        if i % 2 == 0:
-            positions.append(sin(to_be_sinusoided))
-        else:
-            positions.append(cos(to_be_sinusoided))
-    return positions
+def positional_encoding(seq_len, d):
+    positions = torch.arange(seq_len, device=device, dtype=torch.float32).unsqueeze(1) # (n, 1)
+
+    i = torch.arange(d, device=device, dtype=torch.float32)  # (d,)
+    div_term = torch.pow(10_000.0, (2 * (i // 2)) / d)
+
+    angles = positions / div_term  # (n, d)
+
+    pe = torch.zeros_like(angles)
+    pe[:, 0::2] = torch.sin(angles[:, 0::2])
+    pe[:, 1::2] = torch.cos(angles[:, 1::2])
+
+    return pe
 
 E = nn.Embedding(V, d).to(device)
 model = TransformerBlock(d, d_ff).to(device)
 U = nn.Linear(d, V, bias=False).to(device)
 
 params = (
-    list(model.parameters()) +
     list(E.parameters()    ) +
+    list(model.parameters()) +
     list(U.parameters()    )
 )
 optimizer = torch.optim.Adam(params, lr=lr)
@@ -142,34 +145,34 @@ optimizer = torch.optim.Adam(params, lr=lr)
 for epoch in range(epochs):
     log_loss = 0.0
     log_steps = 0
-    # model.train()
     pbar = tqdm(range(steps_per_epoch), desc=f"epoch {epoch + 1}/{epochs}", unit="step")
-    total_loss = 0.0
     for step in pbar:
         global_step = epoch * steps_per_epoch + step
         current_lr = lr * (1.0 - (global_step / (epochs * steps_per_epoch)))
         
-        # TODO: understand this group stuff
+        # TODO: understand this group thing (is group a per param thing?)
         for group in optimizer.param_groups:
             group["lr"] = current_lr
         
         optimizer.zero_grad()
 
-        window_start_idx = np.random.randint(1, corpus_len - sequence_len)
-        context_window = token_ids[window_start_idx: window_start_idx + sequence_len]
+        # uniformly randomly sampled start index i for (t_i, ..., t_{i+L-1})
+        window_start_idx = np.random.randint(1, corpus_len - seq_len - 1)
+
+        context_window = token_ids[window_start_idx: window_start_idx + seq_len]
         context_window = torch.tensor(context_window, dtype=torch.int32).to(device)
 
-        X = E(context_window) # TODO: + P(context_window)
+        targets = token_ids[window_start_idx+1: window_start_idx + seq_len+1]
+        targets = torch.tensor(targets, dtype=torch.long).to(device)
+
+        X = E(context_window) + positional_encoding(seq_len, d)
         logits = U(model(X))
 
-        print(logits.view(-1, V))
-
-        loss = cross_entropy(logits.view(-1, V), targets.view(-1))
+        loss = F.cross_entropy(logits, targets)
         loss.backward()
         optimizer.step()
 
         loss_val = float(loss.detach())
-        total_loss += loss_val
         log_loss += loss_val
         log_steps += 1
 

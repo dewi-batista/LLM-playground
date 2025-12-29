@@ -210,7 +210,6 @@ if resume:
 # for the convenience of checkpointing the parameters, seeing losses, etc.
 
 for epoch in range(start_epoch, epochs):
-    total_loss = 0.0
     log_loss = 0.0
     log_steps = 0
     pbar = tqdm(range(steps_per_epoch), desc=f"epoch {epoch + 1}/{epochs}", unit="step")
@@ -239,7 +238,6 @@ for epoch in range(start_epoch, epochs):
         loss.backward()
         optimizer.step()
         loss_val = float(loss.detach())
-        total_loss += loss_val
         log_loss += loss_val
         log_steps += 1
 
