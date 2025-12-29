@@ -54,7 +54,6 @@ vocab_size = len(vocab)
 batch_size = int(config["transformer"]["batch_size"])
 d_model = int(config["transformer"]["d_model"])
 dropout = 0.1
-epochs = 1
 lr = float(config["transformer"]["lr"])
 # TODO: read about AdamW + weight decay (and why you often exclude biases/norms)
 weight_decay = 0.1
@@ -64,10 +63,19 @@ grad_clip = 1.0
 warmup_frac = 0.02
 # TODO: read about gradient accumulation (simulate larger batch size)
 grad_accum_steps = 1
+# TODO: train for a fixed token budget (more common than "epochs" for LMs)
+train_tokens = 1_638_400
+# TODO: keep a held-out validation split for perplexity + checkpointing decisions
+val_frac = 0.01
+# TODO: how often to compute validation perplexity (in opt steps)
+eval_every = 50
+# TODO: number of random val batches to estimate perplexity
+eval_batches = 50
+# TODO: how often to show recent train loss (in opt steps)
+log_every = 50
 min_count = 5
 num_blocks = int(config["transformer"]["num_blocks"])
 seq_len = 128
-steps_per_epoch = 100
 
 # non-config hyperparams
 # TODO: read about why head dim is often ~64 (so n_heads ≈ d_model/64)
@@ -105,6 +113,15 @@ else:
     checkpoint_path = run_dir / f"{language}_transformer_{timestamp}_{model_number}.ckpt"
     resume = True
 corpus_len = len(indeces_corpus_to_token)
+
+tokens_per_step = batch_size * seq_len * grad_accum_steps
+total_steps = int(math.ceil(train_tokens / tokens_per_step))
+warmup_steps = max(1, int(total_steps * warmup_frac))
+
+# split corpus into train/val (contiguous split, LM-style)
+val_start = int(corpus_len * (1.0 - val_frac))
+train_token_ids = indeces_corpus_to_token[:val_start]
+val_token_ids = indeces_corpus_to_token[val_start:]
 
 def positional_encoding(seq_len, d_model, device):
     positions = torch.arange(seq_len, device=device, dtype=torch.float32).unsqueeze(1) # (n, 1)
@@ -186,7 +203,8 @@ optimizer = torch.optim.AdamW(
     eps=1e-8,
 )
 
-start_epoch = 0
+start_step = 0
+best_val_ppl = float("inf")
 if resume:
     assert checkpoint_path.exists()
     ckpt = torch.load(checkpoint_path, map_location=device, weights_only=False)
@@ -194,44 +212,31 @@ if resume:
     model.load_state_dict(ckpt["model_state_dict"])
     final_lay_norm.load_state_dict(ckpt["final_lay_norm_state_dict"])
     optimizer.load_state_dict(ckpt["optimizer_state_dict"])
-    start_epoch = int(ckpt["epoch"])
+    start_step = int(ckpt.get("global_step", 0))
+    best_val_ppl = float(ckpt.get("best_val_ppl", float("inf")))
 
     random.setstate(ckpt["rng_state_py"])
     np.random.set_state(ckpt["rng_state_np"])
     torch.set_rng_state(ckpt["rng_state_torch"].cpu())
     if torch.cuda.is_available() and ckpt["rng_state_cuda"] is not None:
         torch.cuda.set_rng_state_all([s.cpu() for s in ckpt["rng_state_cuda"]])
-    tqdm.write(f"resuming from: {checkpoint_path} (epoch={start_epoch})")
+    tqdm.write(f"resuming from: {checkpoint_path} (step={start_step}, best_val_ppl={best_val_ppl:.2f})")
 
-total_steps = epochs * steps_per_epoch
-warmup_steps = max(1, int(total_steps * warmup_frac))
+offsets = np.arange(seq_len, dtype=np.int64)
 
-for epoch in range(start_epoch, epochs):
-    log_loss = 0.0
-    log_steps = 0
-    # TODO: learn more about this tqdm(range()) struct
-    pbar = tqdm(range(steps_per_epoch), desc=f"epoch {epoch + 1}/{epochs}", unit="step")
-    for step in pbar:
-        global_step = epoch * steps_per_epoch + step
-        # TODO: read about warmup + cosine LR schedules
-        if global_step < warmup_steps:
-            current_lr = lr * (global_step + 1) / warmup_steps
-        else:
-            progress = (global_step - warmup_steps) / max(1, total_steps - warmup_steps)
-            current_lr = lr * 0.5 * (1.0 + math.cos(math.pi * progress))
-        for group in optimizer.param_groups:
-            group["lr"] = current_lr # update learning rate of all params
-        
-        optimizer.zero_grad()
-
-        offsets = np.arange(seq_len, dtype=np.int64)
-        step_loss = 0.0
-        # TODO: read about gradient accumulation (multiple forward/backward passes before stepping)
-        for _ in range(grad_accum_steps):
-            # sample batch of token sequences (t_i, ..., t_{i + seq_len - 1})
-            window_start_idx = np.random.randint(0, corpus_len - seq_len - 1, size=batch_size)
-            context_window = indeces_corpus_to_token[window_start_idx[:, None] + offsets[None, :]]
-            targets = indeces_corpus_to_token[window_start_idx[:, None] + offsets[None, :] + 1]
+# TODO: this is an estimate (random batches), not full-corpus perplexity
+def val_perplexity():
+    model.eval()
+    E.eval()
+    final_lay_norm.eval()
+    U.eval()
+    dropout_embed.eval()
+    with torch.no_grad():
+        total_loss = 0.0
+        for _ in range(eval_batches):
+            window_start_idx = np.random.randint(0, len(val_token_ids) - seq_len - 1, size=batch_size)
+            context_window = val_token_ids[window_start_idx[:, None] + offsets[None, :]]
+            targets = val_token_ids[window_start_idx[:, None] + offsets[None, :] + 1]
 
             context_window = torch.as_tensor(context_window, dtype=torch.long, device=device)
             targets = torch.as_tensor(targets, dtype=torch.long, device=device)
@@ -239,57 +244,108 @@ for epoch in range(start_epoch, epochs):
             X = dropout_embed(E(context_window) + pe)
             logits = U(final_lay_norm(model(X)))
             loss = F.cross_entropy(logits.reshape(-1, V), targets.reshape(-1))
-            (loss / grad_accum_steps).backward()
-            step_loss += float(loss.detach())
+            total_loss += float(loss)
 
-        # TODO: read about gradient clipping (stabilises training)
-        torch.nn.utils.clip_grad_norm_(params, grad_clip)
-        optimizer.step()
+    model.train()
+    E.train()
+    final_lay_norm.train()
+    U.train()
+    dropout_embed.train()
 
-        loss_val = step_loss / grad_accum_steps
-        log_loss += loss_val
-        log_steps += 1
+    mean_loss = total_loss / eval_batches
+    return math.exp(mean_loss)
 
-        log_every = 1_000
-        if (step + 1) % log_every == 0:
-            pbar.set_postfix(recent_loss=f"{log_loss / log_steps:.4f}")
-            log_loss = 0.0
-            log_steps = 0
+pbar = tqdm(range(start_step, total_steps), desc="train", unit="step", total=total_steps, initial=start_step)
+log_loss = 0.0
+log_steps = 0
+for step in pbar:
+    # TODO: read about warmup + cosine LR schedules
+    if step < warmup_steps:
+        current_lr = lr * (step + 1) / warmup_steps
+    else:
+        progress = (step - warmup_steps) / max(1, total_steps - warmup_steps)
+        current_lr = lr * 0.5 * (1.0 + math.cos(math.pi * progress))
+    for group in optimizer.param_groups:
+        group["lr"] = current_lr # update learning rate of all params
+    
+    optimizer.zero_grad()
 
-    torch.save(
-        {
-            "E_state_dict": E.state_dict(),
-            "model_state_dict": model.state_dict(),
-            "final_lay_norm_state_dict": final_lay_norm.state_dict(),
-            "U_state_dict": U.state_dict(),
-            "optimizer_state_dict": optimizer.state_dict(),
-            "vocab_size": V,
-            "min_count": min_count,
-            "index_to_token": index_to_token,
-            "d_model": d_model,
-            "num_heads": num_heads,
-            "num_blocks": num_blocks,
-            "d_ff": d_ff,
-            "seq_len": seq_len,
-            "batch_size": batch_size,
-            "dropout": dropout,
-            "lr": lr,
-            "weight_decay": weight_decay,
-            "grad_clip": grad_clip,
-            "warmup_frac": warmup_frac,
-            "warmup_steps": warmup_steps,
-            "total_steps": total_steps,
-            "grad_accum_steps": grad_accum_steps,
-            "bpe_vocab_path": str(vocab_path.relative_to(HERE)),
-            "bpe_encodings_path": str(encodings_path.relative_to(HERE)),
-            "epoch": epoch + 1,
-            "rng_state_py": random.getstate(),
-            "rng_state_np": np.random.get_state(),
-            "rng_state_torch": torch.get_rng_state(),
-            "rng_state_cuda": torch.cuda.get_rng_state_all() if torch.cuda.is_available() else None,
-        },
-        checkpoint_path,
-    )
+    step_loss = 0.0
+    # TODO: read about gradient accumulation (multiple forward/backward passes before stepping)
+    for _ in range(grad_accum_steps):
+        # sample batch of token sequences (t_i, ..., t_{i + seq_len - 1})
+        window_start_idx = np.random.randint(0, len(train_token_ids) - seq_len - 1, size=batch_size)
+        context_window = train_token_ids[window_start_idx[:, None] + offsets[None, :]]
+        targets = train_token_ids[window_start_idx[:, None] + offsets[None, :] + 1]
+
+        context_window = torch.as_tensor(context_window, dtype=torch.long, device=device)
+        targets = torch.as_tensor(targets, dtype=torch.long, device=device)
+
+        X = dropout_embed(E(context_window) + pe)
+        logits = U(final_lay_norm(model(X)))
+        loss = F.cross_entropy(logits.reshape(-1, V), targets.reshape(-1))
+        (loss / grad_accum_steps).backward()
+        step_loss += float(loss.detach())
+
+    # TODO: read about gradient clipping (stabilises training)
+    torch.nn.utils.clip_grad_norm_(params, grad_clip)
+    optimizer.step()
+
+    log_loss += step_loss / grad_accum_steps
+    log_steps += 1
+
+    if (step + 1) % log_every == 0:
+        pbar.set_postfix(recent_loss=f"{log_loss / log_steps:.4f}", lr=f"{current_lr:.2e}")
+        log_loss = 0.0
+        log_steps = 0
+
+    # TODO: checkpoint based on validation perplexity (common for deciding "best" model)
+    if (step + 1) % eval_every == 0 or (step + 1) == total_steps:
+        val_ppl = val_perplexity()
+        pbar.set_postfix(val_ppl=f"{val_ppl:.2f}")
+        if val_ppl < best_val_ppl:
+            best_val_ppl = val_ppl
+            torch.save(
+                {
+                    "E_state_dict": E.state_dict(),
+                    "model_state_dict": model.state_dict(),
+                    "final_lay_norm_state_dict": final_lay_norm.state_dict(),
+                    "U_state_dict": U.state_dict(),
+                    "optimizer_state_dict": optimizer.state_dict(),
+                    "vocab_size": V,
+                    "min_count": min_count,
+                    "index_to_token": index_to_token,
+                    "d_model": d_model,
+                    "num_heads": num_heads,
+                    "num_blocks": num_blocks,
+                    "d_ff": d_ff,
+                    "seq_len": seq_len,
+                    "batch_size": batch_size,
+                    "dropout": dropout,
+                    "lr": lr,
+                    "weight_decay": weight_decay,
+                    "grad_clip": grad_clip,
+                    "warmup_frac": warmup_frac,
+                    "warmup_steps": warmup_steps,
+                    "total_steps": total_steps,
+                    "grad_accum_steps": grad_accum_steps,
+                    "train_tokens": train_tokens,
+                    "tokens_per_step": tokens_per_step,
+                    "val_frac": val_frac,
+                    "eval_every": eval_every,
+                    "eval_batches": eval_batches,
+                    "best_val_ppl": best_val_ppl,
+                    "val_ppl": val_ppl,
+                    "bpe_vocab_path": str(vocab_path.relative_to(HERE)),
+                    "bpe_encodings_path": str(encodings_path.relative_to(HERE)),
+                    "global_step": step + 1,
+                    "rng_state_py": random.getstate(),
+                    "rng_state_np": np.random.get_state(),
+                    "rng_state_torch": torch.get_rng_state(),
+                    "rng_state_cuda": torch.cuda.get_rng_state_all() if torch.cuda.is_available() else None,
+                },
+                checkpoint_path,
+            )
 
 def token_to_cli(token: str) -> str:
     if token.startswith(" "):
