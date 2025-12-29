@@ -54,7 +54,7 @@ epochs = 1
 lr = 1e-3
 min_count = 5
 seq_len = 128
-steps_per_epoch = 3_000
+steps_per_epoch = 100 #3_000
 
 # prune vocab of sufficiently-infrequent tokens
 keep_token_ids = [i for i in range(vocab_size) if int(vocab[str(i)]["count"]) >= min_count]
