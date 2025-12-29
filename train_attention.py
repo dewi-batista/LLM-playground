@@ -46,8 +46,10 @@ with open(vocab_path) as f:
 vocab_size = len(vocab)
 
 # hyperparams
+batch_size = 32
 d_model = int(config["model"]["d_model"])
 d_ff = 4 * d_model
+dropout = 0.1
 epochs = 1
 lr = 1e-3
 min_count = 5
@@ -58,16 +60,6 @@ steps_per_epoch = 3_000
 keep_token_ids = [i for i in range(vocab_size) if int(vocab[str(i)]["count"]) >= min_count]
 index_to_token = [vocab[str(i)]["string"] for i in keep_token_ids]
 V = len(index_to_token)
-
-# for probabilities pertaining to negative indices
-neg_probs = np.zeros(V, dtype=np.float64)
-counts = np.zeros(V, dtype=np.int64)
-for idx, token_id in enumerate(keep_token_ids):
-    info = vocab[str(token_id)]
-    neg_probs[idx] = float(info["neg_prob"])
-    counts[idx] = int(info["count"])
-neg_probs /= neg_probs.sum()
-neg_probs_t = torch.as_tensor(neg_probs, dtype=torch.float, device=device)
 
 token_ids = load_or_create_token_ids(
     language,
@@ -86,11 +78,11 @@ indeces_corpus_to_token = token_id_to_index[token_ids]
 indeces_corpus_to_token = indeces_corpus_to_token[indeces_corpus_to_token >= 0]
 
 run_timestamp = datetime.now().strftime("%Y%m%d%H%M%S")
-checkpoint_path = run_dir / f"{language}_transformer_{run_timestamp}.skpt"
+checkpoint_path = run_dir / f"{language}_transformer_{run_timestamp}.ckpt"
 corpus_len = len(indeces_corpus_to_token)
 
 class TransformerBlock(nn.Module):
-    def __init__(self, d_model, d_ff):
+    def __init__(self, d_model, d_ff, dropout):
         super().__init__()
         self.W_Q = nn.Linear(d_model, d_model)
         self.W_K = nn.Linear(d_model, d_model)
@@ -103,6 +95,8 @@ class TransformerBlock(nn.Module):
         self.ln1 = nn.LayerNorm(d_model)
         self.ln2 = nn.LayerNorm(d_model)
 
+        self.dropout_attn = nn.Dropout(dropout)
+        self.dropout_ffn = nn.Dropout(dropout)
         self.act = nn.GELU()
 
     def forward(self, X):
@@ -115,11 +109,11 @@ class TransformerBlock(nn.Module):
 
         M = torch.triu(X.new_full((T, T), float("-inf")), diagonal=1)
         A = torch.softmax((Q @ K.transpose(-2, -1)) / (d_model**0.5) + M, dim=-1)
-        O = self.W_O(A @ V)
-        H_1 = self.ln1(O + X)
+        O = self.dropout_attn(self.W_O(A @ V))
+        H_1 = self.ln1(X + O)
 
-        H_2 = self.W_2(self.act(self.W_1(H_1)))
-        H_3 = self.ln2(H_2 + H_1)
+        H_2 = self.dropout_ffn(self.W_2(self.act(self.W_1(H_1))))
+        H_3 = self.ln2(H_1 + H_2)
         return H_3
 
 def positional_encoding(seq_len, d_model, device):
@@ -137,13 +131,21 @@ def positional_encoding(seq_len, d_model, device):
     return pe
 
 E = nn.Embedding(V, d_model).to(device)
-model = TransformerBlock(d_model, d_ff).to(device)
+model = TransformerBlock(d_model, d_ff, dropout).to(device)
+ln_f = nn.LayerNorm(d_model).to(device)
 U = nn.Linear(d_model, V, bias=False).to(device)
+dropout_embed = nn.Dropout(dropout).to(device)
 
+# TODO: check that this is what it's intended to be (weight tying)
+U.weight = E.weight
+
+pe = positional_encoding(seq_len, d_model, device=device)
+
+# NOTE: Does not include U.parameters() due to weight tying
 params = (
     list(E.parameters()    ) +
     list(model.parameters()) +
-    list(U.parameters()    )
+    list(ln_f.parameters())
 )
 optimizer = torch.optim.Adam(params, lr=lr)
 
@@ -159,19 +161,20 @@ for epoch in range(epochs):
         
         optimizer.zero_grad()
 
-        # sample token sequence (t_i, ..., t_{i + seq_len - 1})
-        window_start_idx = np.random.randint(0, corpus_len - seq_len - 1)
+        # sample batch of token sequences (t_i, ..., t_{i + seq_len - 1})
+        window_start_idx = np.random.randint(0, corpus_len - seq_len - 1, size=batch_size)
+        offsets = np.arange(seq_len, dtype=np.int64)
 
-        context_window = indeces_corpus_to_token[window_start_idx : window_start_idx + seq_len]
+        context_window = indeces_corpus_to_token[window_start_idx[:, None] + offsets[None, :]]
+        targets = indeces_corpus_to_token[window_start_idx[:, None] + offsets[None, :] + 1]
+
         context_window = torch.as_tensor(context_window, dtype=torch.long, device=device)
-
-        targets = indeces_corpus_to_token[window_start_idx + 1 : window_start_idx + seq_len + 1]
         targets = torch.as_tensor(targets, dtype=torch.long, device=device)
 
-        X = E(context_window) + positional_encoding(seq_len, d_model, device=device)
-        logits = U(model(X))
+        X = dropout_embed(E(context_window) + pe)
+        logits = U(ln_f(model(X)))
 
-        loss = F.cross_entropy(logits, targets)
+        loss = F.cross_entropy(logits.reshape(-1, V), targets.reshape(-1))
         loss.backward()
         optimizer.step()
 
@@ -184,11 +187,12 @@ for epoch in range(epochs):
             pbar.set_postfix(recent_loss=f"{log_loss / log_steps:.4f}")
             log_loss = 0.0
             log_steps = 0
-
+    # TODO: Check if this is saving for dentical continuation.
     torch.save(
         {
             "E_state_dict": E.state_dict(),
             "model_state_dict": model.state_dict(),
+            "ln_f_state_dict": ln_f.state_dict(),
             "U_state_dict": U.state_dict(),
             "vocab_size": V,
             "min_count": min_count,
@@ -196,6 +200,8 @@ for epoch in range(epochs):
             "d_model": d_model,
             "d_ff": d_ff,
             "seq_len": seq_len,
+            "batch_size": batch_size,
+            "dropout": dropout,
             "bpe_vocab_path": str(vocab_path.relative_to(HERE)),
             "bpe_encodings_path": str(encodings_path.relative_to(HERE)),
             "epoch": epoch + 1,

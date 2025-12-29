@@ -1,5 +1,4 @@
 *.ckpt
-*.skpt
 *DS_store
 
 __pycache__/
