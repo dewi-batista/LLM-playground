@@ -56,29 +56,6 @@ lr = 1e-3
 min_count = 5
 steps_per_epoch = 1
 
-# used for caching, TODO: move caching to its own script
-def iter_pre_tokens(sequence: str):
-    sequence = sequence.strip()
-    first = True
-    for match in re.finditer(r"\S+", sequence):
-        token = match.group(0)
-        if first:
-            yield token
-            first = False
-        else:
-            yield " " + token
-
-# TODO: parallelise to output (n x d) instead of (1 x d) now
-def positional_encoding(position):
-    positions = []
-    for i in range(d):
-        to_be_sinusoided = position / pow(10_000, 2 * (i // 2) / d)
-        if i % 2 == 0:
-            positions.append(sin(to_be_sinusoided))
-        else:
-            positions.append(cos(to_be_sinusoided))
-    return positions
-
 # prune vocab of sufficiently-infrequent tokens
 keep_token_ids = [i for i in range(vocab_size) if int(vocab[str(i)]["count"]) >= min_count]
 index_to_token = [vocab[str(i)]["string"] for i in keep_token_ids]
@@ -140,9 +117,20 @@ class TransformerBlock(nn.Module):
         H_3 = self.ln2(H_2 + H_1)
         return H_3
 
+# TODO: parallelise to output (n x d) instead of (1 x d) now
+def positional_encoding(position):
+    positions = []
+    for i in range(d):
+        to_be_sinusoided = position / pow(10_000, 2 * (i // 2) / d)
+        if i % 2 == 0:
+            positions.append(sin(to_be_sinusoided))
+        else:
+            positions.append(cos(to_be_sinusoided))
+    return positions
+
 E = nn.Embedding(V, d).to(device)
 model = TransformerBlock(d, d_ff).to(device)
-U = nn.Linear(d, V, bias=False)
+U = nn.Linear(d, V, bias=False).to(device)
 
 params = (
     list(model.parameters()) +
@@ -160,7 +148,9 @@ for epoch in range(epochs):
     for step in pbar:
         global_step = epoch * steps_per_epoch + step
         current_lr = lr * (1.0 - (global_step / (epochs * steps_per_epoch)))
-        for group in optimizer.param_groups: # I'm unsure what this group thing is
+        
+        # TODO: understand this group stuff
+        for group in optimizer.param_groups:
             group["lr"] = current_lr
         
         optimizer.zero_grad()
@@ -170,24 +160,24 @@ for epoch in range(epochs):
         context_window = torch.tensor(context_window, dtype=torch.int32).to(device)
 
         X = E(context_window) # TODO: + P(context_window)
-        
         logits = U(model(X))
-        print(logits)
 
+        print(logits.view(-1, V))
 
-#         loss = F.cross_entropy() # TODO
-#         loss.backward()
-#         optimizer.step()
-#         loss_val = float(loss.detach())
-#         total_loss += loss_val
-#         log_loss += loss_val
-#         log_steps += 1
+        loss = cross_entropy(logits.view(-1, V), targets.view(-1))
+        loss.backward()
+        optimizer.step()
 
-#         log_every = 1_000
-#         if (step + 1) % log_every == 0:
-#             pbar.set_postfix(recent_loss=f"{log_loss / log_steps:.4f}")
-#             log_loss = 0.0
-#             log_steps = 0
+        loss_val = float(loss.detach())
+        total_loss += loss_val
+        log_loss += loss_val
+        log_steps += 1
 
-# # keep this here do not indent!!!
-# tqdm.write(f"saved: {checkpoint_path}")
+        log_every = 1_000
+        if (step + 1) % log_every == 0:
+            pbar.set_postfix(recent_loss=f"{log_loss / log_steps:.4f}")
+            log_loss = 0.0
+            log_steps = 0
+
+# keep this here do not indent!!!
+tqdm.write(f"saved: {checkpoint_path}")
