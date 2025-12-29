@@ -1,10 +1,12 @@
 from cache_tokenisation import load_or_create_token_ids
+from datetime import datetime
 from pathlib import Path
 from tqdm import tqdm
 
 import json
 import numpy as np
 import pickle
+import random
 import sys
 import torch
 import torch.nn as nn
@@ -45,7 +47,7 @@ vocab_size = len(vocab)
 
 # hyperparams
 seq_len = 8
-d = int(config["model"]["d_model"])
+d_model = int(config["model"]["d_model"])
 d_ff = 64
 epochs = 1
 lr = 1e-3
@@ -83,9 +85,8 @@ for i, token_id in enumerate(keep_token_ids):
 indeces_corpus_to_token = token_id_to_index[token_ids]
 indeces_corpus_to_token = indeces_corpus_to_token[indeces_corpus_to_token >= 0]
 
-# new ckpt
-model_number = len(list(run_dir.glob(f"{language}_{timestamp}_*.ckpt"))) + 1
-checkpoint_path = run_dir / f"{language}_{timestamp}_{model_number}.ckpt"
+run_timestamp = datetime.now().strftime("%Y%m%d%H%M%S")
+checkpoint_path = run_dir / f"{language}_transformer_{run_timestamp}.skpt"
 corpus_len = len(indeces_corpus_to_token)
 
 class TransformerBlock(nn.Module):
@@ -121,11 +122,11 @@ class TransformerBlock(nn.Module):
         H_3 = self.ln2(H_2 + H_1)
         return H_3
 
-def positional_encoding(seq_len, d, device):
+def positional_encoding(seq_len, d_model, device):
     positions = torch.arange(seq_len, device=device, dtype=torch.float32).unsqueeze(1) # (n, 1)
 
-    i = torch.arange(d, device=device, dtype=torch.float32)  # (d,)
-    div_term = torch.pow(10_000.0, (2 * (i // 2)) / d)
+    i = torch.arange(d_model, device=device, dtype=torch.float32)  # (d,)
+    div_term = torch.pow(10_000.0, (2 * (i // 2)) / d_model)
 
     angles = positions / div_term  # (n, d)
 
@@ -135,9 +136,9 @@ def positional_encoding(seq_len, d, device):
 
     return pe
 
-E = nn.Embedding(V, d).to(device)
-model = TransformerBlock(d, d_ff).to(device)
-U = nn.Linear(d, V, bias=False).to(device)
+E = nn.Embedding(V, d_model).to(device)
+model = TransformerBlock(d_model, d_ff).to(device)
+U = nn.Linear(d_model, V, bias=False).to(device)
 
 params = (
     list(E.parameters()    ) +
@@ -153,10 +154,8 @@ for epoch in range(epochs):
     for step in pbar:
         global_step = epoch * steps_per_epoch + step
         current_lr = lr * (1.0 - (global_step / (epochs * steps_per_epoch)))
-        
-        # TODO: understand this group thing (is group a per param thing?)
         for group in optimizer.param_groups:
-            group["lr"] = current_lr
+            group["lr"] = current_lr # update learning rate of all params
         
         optimizer.zero_grad()
 
@@ -169,7 +168,7 @@ for epoch in range(epochs):
         targets = indeces_corpus_to_token[window_start_idx + 1 : window_start_idx + seq_len + 1]
         targets = torch.as_tensor(targets, dtype=torch.long, device=device)
 
-        X = E(context_window) + positional_encoding(seq_len, d, device=device)
+        X = E(context_window) + positional_encoding(seq_len, d_model, device=device)
         logits = U(model(X))
 
         loss = F.cross_entropy(logits, targets)
@@ -186,5 +185,22 @@ for epoch in range(epochs):
             log_loss = 0.0
             log_steps = 0
 
+    torch.save(
+        {
+            "E_state_dict": E.state_dict(),
+            "model_state_dict": model.state_dict(),
+            "U_state_dict": U.state_dict(),
+            "vocab_size": V,
+            "min_count": min_count,
+            "index_to_token": index_to_token,
+            "d_model": d_model,
+            "d_ff": d_ff,
+            "seq_len": seq_len,
+            "bpe_vocab_path": str(vocab_path.relative_to(HERE)),
+            "bpe_encodings_path": str(encodings_path.relative_to(HERE)),
+            "epoch": epoch + 1,
+        },
+        checkpoint_path,
+    )
 # keep this here do not indent!!!
 tqdm.write(f"saved: {checkpoint_path}")

@@ -1,4 +1,5 @@
-# TODO: hyperparameter tuning; lr, d, k, subsample_t, min_count
+# TODO: Hyperparameter tuning; lr, d, k, subsample_t, min_count.
+# NOTE: This script is for a standalone embedding map, Word2Vec style.
 from pathlib import Path
 from tqdm import tqdm
 
