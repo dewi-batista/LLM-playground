@@ -46,13 +46,13 @@ with open(vocab_path) as f:
 vocab_size = len(vocab)
 
 # hyperparams
-seq_len = 8
 d_model = int(config["model"]["d_model"])
-d_ff = 64
+d_ff = 4 * d_model
 epochs = 1
 lr = 1e-3
 min_count = 5
-steps_per_epoch = 1
+seq_len = 128
+steps_per_epoch = 3_000
 
 # prune vocab of sufficiently-infrequent tokens
 keep_token_ids = [i for i in range(vocab_size) if int(vocab[str(i)]["count"]) >= min_count]
@@ -159,7 +159,7 @@ for epoch in range(epochs):
         
         optimizer.zero_grad()
 
-        # uniformly randomly sampled start index i for (t_i, ..., t_{i+L-1})
+        # sample token sequence (t_i, ..., t_{i + seq_len - 1})
         window_start_idx = np.random.randint(0, corpus_len - seq_len - 1)
 
         context_window = indeces_corpus_to_token[window_start_idx : window_start_idx + seq_len]
