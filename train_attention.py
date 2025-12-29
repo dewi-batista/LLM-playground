@@ -17,10 +17,12 @@ import yaml
 
 # command line input
 if len(sys.argv) < 3 or sys.argv[1] in {"-h", "--help"}:
-    print(f"usage: python {Path(__file__).name} <language> <vocab_timestamp>")
+    print(f"usage: python {Path(__file__).name} <language> <vocab_timestamp> [transformer_timestamp]")
     raise SystemExit(1)
 language = sys.argv[1]
 timestamp = sys.argv[2]
+transformer_timestamp = sys.argv[3] if len(sys.argv) > 3 else datetime.now().strftime("%Y%m%d%H%M%S")
+resume = len(sys.argv) > 3
 
 # NOTE: I learned recently of an "mps" device which some Apple MacBooks have.
 # Perhaps worth adding in future (my M1 MacBook Air blows).
@@ -79,8 +81,7 @@ for i, token_id in enumerate(keep_token_ids):
 indeces_corpus_to_token = token_id_to_index[token_ids]
 indeces_corpus_to_token = indeces_corpus_to_token[indeces_corpus_to_token >= 0]
 
-run_timestamp = datetime.now().strftime("%Y%m%d%H%M%S")
-checkpoint_path = run_dir / f"{language}_transformer_{run_timestamp}.ckpt"
+checkpoint_path = run_dir / f"{language}_transformer_{transformer_timestamp}.ckpt"
 corpus_len = len(indeces_corpus_to_token)
 
 class TransformerBlock(nn.Module):
@@ -151,7 +152,24 @@ params = (
 )
 optimizer = torch.optim.Adam(params, lr=lr)
 
-for epoch in range(epochs):
+start_epoch = 0
+if resume:
+    assert checkpoint_path.exists()
+    ckpt = torch.load(checkpoint_path, map_location=device, weights_only=False)
+    E.load_state_dict(ckpt["E_state_dict"])
+    model.load_state_dict(ckpt["model_state_dict"])
+    final_lay_norm.load_state_dict(ckpt["final_lay_norm_state_dict"])
+    optimizer.load_state_dict(ckpt["optimizer_state_dict"])
+    start_epoch = int(ckpt["epoch"])
+
+    random.setstate(ckpt["rng_state_py"])
+    np.random.set_state(ckpt["rng_state_np"])
+    torch.set_rng_state(ckpt["rng_state_torch"].cpu())
+    if torch.cuda.is_available() and ckpt["rng_state_cuda"] is not None:
+        torch.cuda.set_rng_state_all([s.cpu() for s in ckpt["rng_state_cuda"]])
+    tqdm.write(f"resuming from: {checkpoint_path} (epoch={start_epoch})")
+
+for epoch in range(start_epoch, epochs):
     log_loss = 0.0
     log_steps = 0
     pbar = tqdm(range(steps_per_epoch), desc=f"epoch {epoch + 1}/{epochs}", unit="step")
@@ -196,6 +214,7 @@ for epoch in range(epochs):
             "model_state_dict": model.state_dict(),
             "final_lay_norm_state_dict": final_lay_norm.state_dict(),
             "U_state_dict": U.state_dict(),
+            "optimizer_state_dict": optimizer.state_dict(),
             "vocab_size": V,
             "min_count": min_count,
             "index_to_token": index_to_token,
@@ -207,8 +226,42 @@ for epoch in range(epochs):
             "bpe_vocab_path": str(vocab_path.relative_to(HERE)),
             "bpe_encodings_path": str(encodings_path.relative_to(HERE)),
             "epoch": epoch + 1,
+            "rng_state_py": random.getstate(),
+            "rng_state_np": np.random.get_state(),
+            "rng_state_torch": torch.get_rng_state(),
+            "rng_state_cuda": torch.cuda.get_rng_state_all() if torch.cuda.is_available() else None,
         },
         checkpoint_path,
     )
+
+def token_to_cli(token: str) -> str:
+    if token.startswith(" "):
+        n = len(token) - len(token.lstrip(" "))
+        return ("_" * n) + token[n:]
+    return token
+
+model.eval()
+E.eval()
+final_lay_norm.eval()
+U.eval()
+dropout_embed.eval()
+with torch.no_grad():
+    for _ in range(3):
+        start = np.random.randint(0, corpus_len - seq_len - 1)
+        context = indeces_corpus_to_token[start : start + seq_len]
+        true_next = int(indeces_corpus_to_token[start + seq_len])
+
+        x = torch.as_tensor(context, dtype=torch.long, device=device).unsqueeze(0)
+        X = dropout_embed(E(x) + pe)
+        logits = U(final_lay_norm(model(X)))[0, -1]  # (V,)
+        probs = torch.softmax(logits, dim=-1)
+        values, indices = torch.topk(probs, k=5)
+
+        context_text = "".join(index_to_token[int(t)] for t in context)[:200]
+        top5 = [(token_to_cli(index_to_token[int(j)]), float(v)) for v, j in zip(values, indices)]
+        print("\n---")
+        print(context_text)
+        print("true:", token_to_cli(index_to_token[true_next]))
+        print("top5:", top5)
 # keep this here do not indent!!!
 tqdm.write(f"saved: {checkpoint_path}")
