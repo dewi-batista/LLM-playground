@@ -3,4 +3,3 @@ transformer:
   d_model: 384 # 768
   lr: 1e-3
   num_blocks: 6 # 12
-  num_heads: 12 # 12
