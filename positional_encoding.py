@@ -4,12 +4,12 @@ import yaml
 
 with open('./config/config.yaml', "r") as f:
     config = yaml.safe_load(f)
-d_model = config["model"]["d_model"]
+d = config["model"]["d_model"]
 
 def positional_encoding(position):
     positions = []
-    for i in range(d_model):
-        to_be_sinusoided = position / pow(10_000, 2 * (i // 2) / d_model)
+    for i in range(d):
+        to_be_sinusoided = position / pow(10_000, 2 * (i // 2) / d)
         if i % 2 == 0:
             positions.append(sin(to_be_sinusoided))
         else:

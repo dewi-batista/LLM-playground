@@ -1,5 +1,5 @@
-# TODO: hyperparameter tuning; lr, d, k, subsample_t, min_count
 from itertools import pairwise
+from math import cos, sin
 from pathlib import Path
 from tqdm import tqdm
 
@@ -48,17 +48,15 @@ with open(vocab_path) as f:
 vocab_size = len(vocab)
 
 # hyperparams
-batch_size = 8_192
-context_length = 128
+sequence_len = 8
 d = int(config["model"]["d_model"])
-epochs = 10
-k = 10
+d_ff = 64
+epochs = 1
 lr = 1e-3
 min_count = 5
-steps_per_epoch = 100_000
-subsample_t = 1e-5
-window = 5
+steps_per_epoch = 1
 
+# used for caching, TODO: move caching to its own script
 def iter_pre_tokens(sequence: str):
     sequence = sequence.strip()
     first = True
@@ -69,6 +67,17 @@ def iter_pre_tokens(sequence: str):
             first = False
         else:
             yield " " + token
+
+# TODO: parallelise to output (n x d) instead of (1 x d) now
+def positional_encoding(position):
+    positions = []
+    for i in range(d):
+        to_be_sinusoided = position / pow(10_000, 2 * (i // 2) / d)
+        if i % 2 == 0:
+            positions.append(sin(to_be_sinusoided))
+        else:
+            positions.append(cos(to_be_sinusoided))
+    return positions
 
 # prune vocab of sufficiently-infrequent tokens
 keep_token_ids = [i for i in range(vocab_size) if int(vocab[str(i)]["count"]) >= min_count]
@@ -85,56 +94,9 @@ for idx, token_id in enumerate(keep_token_ids):
 neg_probs /= neg_probs.sum()
 neg_probs_t = torch.as_tensor(neg_probs, dtype=torch.float, device=device)
 
-# cache the tokenisation of the corpus into token IDs (if not done already)
-if token_ids_path.exists():
-    token_ids = np.load(token_ids_path, mmap_mode="r")
-else:
-    merges = {tuple(pair): new_token for pair, new_token in encodings}
-    ranks = {tuple(pair): i for i, (pair, _) in enumerate(encodings)}
-    cache = {}
-
-    def bpe_encode(token: str):
-        if token in cache:
-            return cache[token]
-        ids = list(token.encode("utf-8"))
-        while True:
-            best_pair = None
-            best_rank = None
-            for p in pairwise(ids):
-                r = ranks.get(p)
-                if r is None:
-                    continue
-                if best_rank is None or r < best_rank:
-                    best_rank = r
-                    best_pair = p
-            if best_pair is None:
-                break
-            new_token = merges[best_pair]
-            merged = []
-            i = 0
-            while i < len(ids):
-                if i < len(ids) - 1 and (ids[i], ids[i + 1]) == best_pair:
-                    merged.append(new_token)
-                    i += 2
-                else:
-                    merged.append(ids[i])
-                    i += 1
-            ids = merged
-        cache[token] = ids
-        return ids
-
-    with open(corpus_path) as f:
-        corpus = f.read()
-
-    total_token_ids = sum(int(info["count"]) for info in vocab.values())
-    token_ids = np.empty(total_token_ids, dtype=np.uint16 if vocab_size < 65_536 else np.int32)
-    pos = 0
-    for token in tqdm(iter_pre_tokens(corpus), desc=f"tokenising {language}", unit="token"):
-        ids = bpe_encode(token)
-        token_ids[pos : pos + len(ids)] = ids
-        pos += len(ids)
-    token_ids = token_ids[:pos]
-    np.save(token_ids_path, token_ids)
+# TODO: make this caching its own script
+# load cached tokenisation of corpus into token IDs
+token_ids = np.load(token_ids_path, mmap_mode="r")
 
 # map token IDs to embedding indices (and drop pruned tokens)
 token_id_to_index = np.full(vocab_size, -1, dtype=np.int32)
@@ -148,51 +110,84 @@ model_number = len(list(run_dir.glob(f"{language}_{timestamp}_*.ckpt"))) + 1
 checkpoint_path = run_dir / f"{language}_{timestamp}_{model_number}.ckpt"
 corpus_len = len(indeces_corpus_to_token)
 
-E = nn.Embedding(V, d).to(device)
-U = nn.Embedding(V, d).to(device)
-Q = nn.Linear(d, d).to(device)
-K = nn.Linear(d, d).to(device)
-V = nn.Linear(d, d).to(device)
-W1 = nn.Linear(d, d).to(device) # ?
-W2 = nn.Linear(d, d).to(device) # ?
+class TransformerBlock(nn.Module):
+    def __init__(self, d_model, d_ff):
+        super().__init__()
+        self.W_Q = nn.Linear(d_model, d_model)
+        self.W_K = nn.Linear(d_model, d_model)
+        self.W_V = nn.Linear(d_model, d_model)
+        self.W_O = nn.Linear(d_model, d_model)
 
-optimizer = optim.Adam(
-    list(E.parameters() ) +
-    list(U.parameters() ) +
-    list(Q.parameters() ) +
-    list(K.parameters() ) +
-    list(V.parameters() ) +
-    list(W1.parameters()) +
-    list(W2.parameters()),
-    lr=lr
+        self.W_1 = nn.Linear(d_model, d_ff)
+        self.W_2 = nn.Linear(d_ff, d_model)
+
+        self.ln1 = nn.LayerNorm(d_model)
+        self.ln2 = nn.LayerNorm(d_model)
+
+        self.act = nn.GELU()
+
+    def forward(self, X):
+        Q = self.W_Q(X)
+        K = self.W_K(X)
+        V = self.W_V(X)
+
+        M = torch.triu(torch.full((sequence_len, sequence_len), float('-inf')), diagonal=1).to(device)
+        A = torch.softmax(Q @ K.transpose(-2, -1) / np.sqrt(d) + M, dim=-1)
+        O = A @ V
+        H_1 = self.ln1(O + X)
+
+        H_2 = self.W_2(self.act(self.W_1(H_1)))
+        H_3 = self.ln2(H_2 + H_1)
+        return H_3
+
+E = nn.Embedding(V, d).to(device)
+model = TransformerBlock(d, d_ff).to(device)
+U = nn.Linear(d, V, bias=False)
+
+params = (
+    list(model.parameters()) +
+    list(E.parameters()    ) +
+    list(U.parameters()    )
 )
+optimizer = torch.optim.Adam(params, lr=lr)
 
 for epoch in range(epochs):
-    total_loss = 0.0
     log_loss = 0.0
     log_steps = 0
+    # model.train()
     pbar = tqdm(range(steps_per_epoch), desc=f"epoch {epoch + 1}/{epochs}", unit="step")
+    total_loss = 0.0
     for step in pbar:
         global_step = epoch * steps_per_epoch + step
         current_lr = lr * (1.0 - (global_step / (epochs * steps_per_epoch)))
         for group in optimizer.param_groups: # I'm unsure what this group thing is
             group["lr"] = current_lr
+        
         optimizer.zero_grad()
 
+        window_start_idx = np.random.randint(1, corpus_len - sequence_len)
+        context_window = token_ids[window_start_idx: window_start_idx + sequence_len]
+        context_window = torch.tensor(context_window, dtype=torch.int32).to(device)
+
+        X = E(context_window) # TODO: + P(context_window)
+        
+        logits = U(model(X))
+        print(logits)
 
 
-        loss = F.cross_entropy() # TODO
-        loss.backward()
-        optimizer.step()
-        loss_val = float(loss.detach())
-        total_loss += loss_val
-        log_loss += loss_val
-        log_steps += 1
+#         loss = F.cross_entropy() # TODO
+#         loss.backward()
+#         optimizer.step()
+#         loss_val = float(loss.detach())
+#         total_loss += loss_val
+#         log_loss += loss_val
+#         log_steps += 1
 
-        log_every = 1_000
-        if (step + 1) % log_every == 0:
-            pbar.set_postfix(recent_loss=f"{log_loss / log_steps:.4f}")
-            log_loss = 0.0
-            log_steps = 0
-# keep this here do not indent!!!
-tqdm.write(f"saved: {checkpoint_path}")
+#         log_every = 1_000
+#         if (step + 1) % log_every == 0:
+#             pbar.set_postfix(recent_loss=f"{log_loss / log_steps:.4f}")
+#             log_loss = 0.0
+#             log_steps = 0
+
+# # keep this here do not indent!!!
+# tqdm.write(f"saved: {checkpoint_path}")
