@@ -17,11 +17,11 @@ import yaml
 
 # command line input
 if len(sys.argv) < 3 or sys.argv[1] in {"-h", "--help"}:
-    print(f"usage: python {Path(__file__).name} <language> <vocab_timestamp> [transformer_timestamp]")
+    print(f"usage: python {Path(__file__).name} <language> <vocab_timestamp> [model_number]")
     raise SystemExit(1)
 language = sys.argv[1]
 timestamp = sys.argv[2]
-transformer_timestamp = sys.argv[3] if len(sys.argv) > 3 else datetime.now().strftime("%Y%m%d%H%M%S")
+model_number = int(sys.argv[3]) if (len(sys.argv) > 3) else None
 resume = len(sys.argv) > 3
 
 # NOTE: I learned recently of an "mps" device which some Apple MacBooks have.
@@ -50,7 +50,7 @@ with open(vocab_path) as f:
 vocab_size = len(vocab)
 
 # hyperparams
-batch_size = 32
+batch_size = 128
 d_model = int(config["model"]["d_model"])
 d_ff = 4 * d_model
 dropout = 0.1
@@ -58,7 +58,7 @@ epochs = 1
 lr = 1e-3
 min_count = 5
 seq_len = 128
-steps_per_epoch = 100 #3_000
+steps_per_epoch = 3_000
 
 # prune vocab of sufficiently-infrequent tokens
 keep_token_ids = [i for i in range(vocab_size) if int(vocab[str(i)]["count"]) >= min_count]
@@ -81,7 +81,14 @@ for i, token_id in enumerate(keep_token_ids):
 indeces_corpus_to_token = token_id_to_index[token_ids]
 indeces_corpus_to_token = indeces_corpus_to_token[indeces_corpus_to_token >= 0]
 
-checkpoint_path = run_dir / f"{language}_transformer_{transformer_timestamp}.ckpt"
+# new ckpt if model number not passed as argument
+if model_number is None:
+    model_number = len(list(run_dir.glob(f"{language}_transformer_{timestamp}_*.ckpt"))) + 1
+    checkpoint_path = run_dir / f"{language}_transformer_{timestamp}_{model_number}.ckpt"
+    resume = False
+else:
+    checkpoint_path = run_dir / f"{language}_transformer_{timestamp}_{model_number}.ckpt"
+    resume = True
 corpus_len = len(indeces_corpus_to_token)
 
 class TransformerBlock(nn.Module):
@@ -207,7 +214,7 @@ for epoch in range(start_epoch, epochs):
             pbar.set_postfix(recent_loss=f"{log_loss / log_steps:.4f}")
             log_loss = 0.0
             log_steps = 0
-    # TODO: Check if this is saving for dentical continuation.
+    # TODO: Check if this is saving for identical continuation.
     torch.save(
         {
             "E_state_dict": E.state_dict(),
@@ -246,7 +253,7 @@ final_lay_norm.eval()
 U.eval()
 dropout_embed.eval()
 with torch.no_grad():
-    for _ in range(3):
+    for _ in range(5):
         start = np.random.randint(0, corpus_len - seq_len - 1)
         context = indeces_corpus_to_token[start : start + seq_len]
         true_next = int(indeces_corpus_to_token[start + seq_len])
@@ -257,11 +264,11 @@ with torch.no_grad():
         probs = torch.softmax(logits, dim=-1)
         values, indices = torch.topk(probs, k=5)
 
-        context_text = "".join(index_to_token[int(t)] for t in context)[:200]
+        context_text = "".join(index_to_token[int(t)] for t in context[-20:])
         top5 = [(token_to_cli(index_to_token[int(j)]), float(v)) for v, j in zip(values, indices)]
         print("\n---")
         print(context_text)
         print("true:", token_to_cli(index_to_token[true_next]))
         print("top5:", top5)
 # keep this here do not indent!!!
-tqdm.write(f"saved: {checkpoint_path}")
+# tqdm.write(f"saved: {checkpoint_path}")
