@@ -50,7 +50,7 @@ with open(vocab_path) as f:
 vocab_size = len(vocab)
 
 # config hyperparams
-batch_size = int(config["transformer"]["batch_Szie"])
+batch_size = int(config["transformer"]["batch_size"])
 d_model = int(config["transformer"]["d_model"])
 dropout = 0.1
 epochs = 1
@@ -59,7 +59,7 @@ min_count = 5
 num_heads = int(config["transformer"]["num_heads"])
 num_blocks = int(config["transformer"]["num_blocks"])
 seq_len = 128
-steps_per_epoch = 3_000
+steps_per_epoch = 100
 
 # non-config hyperparams
 d_head = d_model / num_heads # TODO: incorporate
