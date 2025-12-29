@@ -49,20 +49,21 @@ with open(vocab_path) as f:
     vocab = json.load(f)
 vocab_size = len(vocab)
 
-# yaml config hyperparams
-d_model = int(config["model"]["d_model"])
-num_heads = 12
-
-# hyperparams
-batch_size = 128
-d_head = d_model / num_heads
-d_ff = 4 * d_model
+# config hyperparams
+batch_size = int(config["transformer"]["batch_Szie"])
+d_model = int(config["transformer"]["d_model"])
 dropout = 0.1
 epochs = 1
-lr = 1e-3
+lr = float(config["transformer"]["lr"])
 min_count = 5
+num_heads = int(config["transformer"]["num_heads"])
+num_blocks = int(config["transformer"]["num_blocks"])
 seq_len = 128
 steps_per_epoch = 3_000
+
+# non-config hyperparams
+d_head = d_model / num_heads # TODO: incorporate
+d_ff = 4 * d_model
 
 # prune vocab of sufficiently-infrequent tokens
 keep_token_ids = [i for i in range(vocab_size) if int(vocab[str(i)]["count"]) >= min_count]
@@ -150,7 +151,7 @@ class TransformerBlock(nn.Module):
 dropout_embed = nn.Dropout(dropout).to(device)
 E = nn.Embedding(V, d_model).to(device)
 final_lay_norm = nn.LayerNorm(d_model).to(device)
-model = TransformerBlock(d_model, d_ff, num_heads, dropout).to(device)
+model = nn.Sequential(*[TransformerBlock(d_model, d_ff, num_heads, dropout) for _ in range(num_blocks)]).to(device)
 U = nn.Linear(d_model, V, bias=False).to(device)
 
 # TODO: check that this is what it's intended to be (weight tying)
@@ -162,8 +163,8 @@ pe = positional_encoding(seq_len, d_model, device=device)
 # NOTE: Does not include U.parameters() due to weight tying
 params = (
     list(E.parameters()) +
-    list(final_lay_norm.parameters()) +
-    list(model.parameters())
+    list(model.parameters()) +
+    list(final_lay_norm.parameters())
 )
 optimizer = torch.optim.Adam(params, lr=lr)
 
@@ -225,28 +226,29 @@ for epoch in range(start_epoch, epochs):
             log_steps = 0
 
     torch.save(
-        {
-            "E_state_dict": E.state_dict(),
-            "model_state_dict": model.state_dict(),
-            "final_lay_norm_state_dict": final_lay_norm.state_dict(),
-            "U_state_dict": U.state_dict(),
-            "optimizer_state_dict": optimizer.state_dict(),
-            "vocab_size": V,
-            "min_count": min_count,
-            "index_to_token": index_to_token,
-            "d_model": d_model,
-            "num_heads": num_heads,
-            "d_ff": d_ff,
-            "seq_len": seq_len,
-            "batch_size": batch_size,
-            "dropout": dropout,
-            "bpe_vocab_path": str(vocab_path.relative_to(HERE)),
-            "bpe_encodings_path": str(encodings_path.relative_to(HERE)),
-            "epoch": epoch + 1,
-            "rng_state_py": random.getstate(),
-            "rng_state_np": np.random.get_state(),
-            "rng_state_torch": torch.get_rng_state(),
-            "rng_state_cuda": torch.cuda.get_rng_state_all() if torch.cuda.is_available() else None,
+	        {
+	            "E_state_dict": E.state_dict(),
+	            "model_state_dict": model.state_dict(),
+	            "final_lay_norm_state_dict": final_lay_norm.state_dict(),
+	            "U_state_dict": U.state_dict(),
+	            "optimizer_state_dict": optimizer.state_dict(),
+	            "vocab_size": V,
+	            "min_count": min_count,
+	            "index_to_token": index_to_token,
+	            "d_model": d_model,
+	            "num_heads": num_heads,
+	            "num_blocks": num_blocks,
+	            "d_ff": d_ff,
+	            "seq_len": seq_len,
+	            "batch_size": batch_size,
+	            "dropout": dropout,
+                "bpe_vocab_path": str(vocab_path.relative_to(HERE)),
+                "bpe_encodings_path": str(encodings_path.relative_to(HERE)),
+                "epoch": epoch + 1,
+                "rng_state_py": random.getstate(),
+                "rng_state_np": np.random.get_state(),
+                "rng_state_torch": torch.get_rng_state(),
+                "rng_state_cuda": torch.cuda.get_rng_state_all() if torch.cuda.is_available() else None,
         },
         checkpoint_path,
     )
@@ -281,4 +283,4 @@ with torch.no_grad():
         print("true:", token_to_cli(index_to_token[true_next]))
         print("top5:", top5)
 # keep this here do not indent!!!
-# tqdm.write(f"saved: {checkpoint_path}")
+tqdm.write(f"saved: {checkpoint_path}")
