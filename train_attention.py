@@ -1,18 +1,14 @@
-from itertools import pairwise
-from math import cos, sin
+from cache_tokenisation import load_or_create_token_ids
 from pathlib import Path
 from tqdm import tqdm
 
 import json
 import numpy as np
 import pickle
-import random
-import re
 import sys
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-import torch.optim as optim
 import yaml
 
 # command line input
@@ -71,9 +67,14 @@ for idx, token_id in enumerate(keep_token_ids):
 neg_probs /= neg_probs.sum()
 neg_probs_t = torch.as_tensor(neg_probs, dtype=torch.float, device=device)
 
-# TODO: make this caching its own script, like cache_tokenisation.py
-# load cached tokenisation of corpus into token IDs
-token_ids = np.load(token_ids_path, mmap_mode="r")
+token_ids = load_or_create_token_ids(
+    language,
+    timestamp,
+    corpus_path=corpus_path,
+    token_ids_path=token_ids_path,
+    encodings=encodings,
+    vocab=vocab,
+)
 
 # map token IDs to embedding indices (and drop pruned tokens)
 token_id_to_index = np.full(vocab_size, -1, dtype=np.int32)
@@ -108,16 +109,19 @@ class TransformerBlock(nn.Module):
         K = self.W_K(X)
         V = self.W_V(X)
 
-        M = torch.triu(torch.full((seq_len, seq_len), float('-inf')), diagonal=1).to(device)
-        A = torch.softmax(Q @ K.transpose(-2, -1) / np.sqrt(d) + M, dim=-1)
-        O = A @ V
+        T = X.shape[-2]
+        d_model = X.shape[-1]
+
+        M = torch.triu(X.new_full((T, T), float("-inf")), diagonal=1)
+        A = torch.softmax((Q @ K.transpose(-2, -1)) / (d_model**0.5) + M, dim=-1)
+        O = self.W_O(A @ V)
         H_1 = self.ln1(O + X)
 
         H_2 = self.W_2(self.act(self.W_1(H_1)))
         H_3 = self.ln2(H_2 + H_1)
         return H_3
 
-def positional_encoding(seq_len, d):
+def positional_encoding(seq_len, d, device):
     positions = torch.arange(seq_len, device=device, dtype=torch.float32).unsqueeze(1) # (n, 1)
 
     i = torch.arange(d, device=device, dtype=torch.float32)  # (d,)
@@ -157,15 +161,15 @@ for epoch in range(epochs):
         optimizer.zero_grad()
 
         # uniformly randomly sampled start index i for (t_i, ..., t_{i+L-1})
-        window_start_idx = np.random.randint(1, corpus_len - seq_len - 1)
+        window_start_idx = np.random.randint(0, corpus_len - seq_len - 1)
 
-        context_window = token_ids[window_start_idx: window_start_idx + seq_len]
-        context_window = torch.tensor(context_window, dtype=torch.int32).to(device)
+        context_window = indeces_corpus_to_token[window_start_idx : window_start_idx + seq_len]
+        context_window = torch.as_tensor(context_window, dtype=torch.long, device=device)
 
-        targets = token_ids[window_start_idx+1: window_start_idx + seq_len+1]
-        targets = torch.tensor(targets, dtype=torch.long).to(device)
+        targets = indeces_corpus_to_token[window_start_idx + 1 : window_start_idx + seq_len + 1]
+        targets = torch.as_tensor(targets, dtype=torch.long, device=device)
 
-        X = E(context_window) + positional_encoding(seq_len, d)
+        X = E(context_window) + positional_encoding(seq_len, d, device=device)
         logits = U(model(X))
 
         loss = F.cross_entropy(logits, targets)
