@@ -1,5 +1,3 @@
-# TODO: Include "git yem" in start.sh file
-
 from cache_tokenisation import load_or_create_token_ids
 from datetime import datetime
 from pathlib import Path
@@ -54,28 +52,23 @@ vocab_size = len(vocab)
 batch_size = int(config["transformer"]["batch_size"])
 d_model = int(config["transformer"]["d_model"])
 dropout = 0.1
-lr = float(config["transformer"]["lr"])
-# TODO: read about AdamW + weight decay (and why you often exclude biases/norms)
-weight_decay = 0.1
-# TODO: read about gradient clipping (helps avoid exploding gradients)
-grad_clip = 1.0
-# TODO: read about warmup + cosine LR schedules
-warmup_frac = 0.02
+eval_batches = 50
+eval_every = 50
 # TODO: read about gradient accumulation (simulate larger batch size)
 grad_accum_steps = 1
-# TODO: train for a fixed token budget (more common than "epochs" for LMs)
-train_tokens = 1_638_400
-# TODO: keep a held-out validation split for perplexity + checkpointing decisions
-val_frac = 0.01
-# TODO: how often to compute validation perplexity (in opt steps)
-eval_every = 50
-# TODO: number of random val batches to estimate perplexity
-eval_batches = 50
-# TODO: how often to show recent train loss (in opt steps)
+# TODO: read about gradient clipping (helps avoid exploding gradients)
+grad_clip = 1.0
 log_every = 50
+lr = float(config["transformer"]["lr"])
 min_count = 5
 num_blocks = int(config["transformer"]["num_blocks"])
 seq_len = 128
+train_tokens = 1e3#1e9
+val_frac = 0.01
+# TODO: read about warmup + cosine LR schedules
+warmup_frac = 0.02
+# TODO: read about AdamW + weight decay (and why you often exclude biases/norms)
+weight_decay = 0.1
 
 # non-config hyperparams
 # TODO: read about why head dim is often ~64 (so n_heads ≈ d_model/64)
@@ -224,7 +217,8 @@ if resume:
 
 offsets = np.arange(seq_len, dtype=np.int64)
 
-# TODO: this is an estimate (random batches), not full-corpus perplexity
+# NOTE: val_perplexity() offers an estimate of validation perplefxity due to
+# its use of random batches, not being over the full corpus.
 def val_perplexity():
     model.eval()
     E.eval()
@@ -368,13 +362,13 @@ with torch.no_grad():
         X = dropout_embed(E(x) + pe)
         logits = U(final_lay_norm(model(X)))[0, -1]  # (V,)
         probs = torch.softmax(logits, dim=-1)
-        values, indices = torch.topk(probs, k=5)
+        values, indices = torch.topk(probs, k=10)
 
-        context_text = "".join(index_to_token[int(t)] for t in context[-20:])
+        context_text = "".join(index_to_token[int(t)] for t in context[-10:])
         top5 = [(token_to_cli(index_to_token[int(j)]), float(v)) for v, j in zip(values, indices)]
         print("\n---")
         print(context_text)
         print("true:", token_to_cli(index_to_token[true_next]))
         print("top5:", top5)
 # keep this here do not indent!!!
-tqdm.write(f"saved: {checkpoint_path}")
+# tqdm.write(f"saved: {checkpoint_path}")

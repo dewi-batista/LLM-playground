@@ -1,5 +1,5 @@
 transformer:
-  batch_size: 128
+  batch_size: 128 #420
   d_model: 384 # 768
   lr: 1e-3
   num_blocks: 6 # 12
