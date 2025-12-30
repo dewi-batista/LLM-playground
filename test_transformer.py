@@ -14,6 +14,19 @@ import torch.nn.functional as F
 HERE = Path(__file__).resolve().parent
 MODELS_DIR = HERE / "models"
 
+BENCH_SENTENCES = [
+    "the capital of france is paris",
+    "the capital of italy is rome",
+    "the quick brown fox jumps over the lazy dog",
+    "the largest planet in the solar system is jupiter",
+    "the author of hamlet is william shakespeare",
+    "machine learning is a field of artificial intelligence",
+    "new york is a city in the united states",
+    "the meaning of life is forty two",
+    "my favourite basketballer is michael jordan",
+    "i like to drink coffee in the morning",
+]
+
 
 def iter_pre_tokens(sequence: str):
     sequence = sequence.strip()
@@ -166,6 +179,7 @@ def main():
     if len(sys.argv) >= 2 and sys.argv[1] in {"-h", "--help"}:
         print(f"usage: python {Path(__file__).name} <language> <vocab_timestamp> <model_number> [prompt...]")
         print(f"   or: python {Path(__file__).name} <language> <vocab_timestamp> <model_number> --gen <n> [prompt...]")
+        print(f"   or: python {Path(__file__).name} <language> <vocab_timestamp> <model_number> --bench")
         raise SystemExit(0)
 
     if len(sys.argv) < 4:
@@ -180,11 +194,23 @@ def main():
         raise SystemExit(1)
     model_number = int(model_number)
 
+    # NOTE: no argparse on purpose (trying to keep it minimal + readable)
     gen_n = 0
-    prompt_args = sys.argv[4:]
-    if len(prompt_args) >= 2 and prompt_args[0] == "--gen":
-        gen_n = int(prompt_args[1])
-        prompt_args = prompt_args[2:]
+    bench = False
+    prompt_args = []
+    args = sys.argv[4:]
+    i = 0
+    while i < len(args):
+        if args[i] == "--gen":
+            gen_n = int(args[i + 1])
+            i += 2
+            continue
+        if args[i] == "--bench":
+            bench = True
+            i += 1
+            continue
+        prompt_args.append(args[i])
+        i += 1
 
     device = torch.device("cuda") if torch.cuda.is_available() else torch.device("cpu")
 
@@ -298,16 +324,11 @@ def main():
             text_out = "".join(index_to_token[i] for i in indeces)
             print("\n---\n" + text_out + "\n---")
 
-    if prompt_args:
-        prompt = " ".join(prompt_args)
-        if gen_n > 0:
-            run_once(prompt)
-            raise SystemExit(0)
-
+    def eval_holdout(prompt: str):
         pre_tokens = list(iter_pre_tokens(prompt))
         if len(pre_tokens) < 2:
             run_once(prompt)
-            raise SystemExit(0)
+            return
 
         context_tokens = pre_tokens[:-1]
         target_token = pre_tokens[-1]
@@ -316,7 +337,7 @@ def main():
         context_indeces = encode_pre_tokens_to_indices(context_tokens, bpe_encode, token_id_to_index)
         if not context_indeces:
             print("<no usable context tokens after pruning>")
-            raise SystemExit(0)
+            return
         if len(context_indeces) > seq_len:
             context_indeces = context_indeces[-seq_len:]
 
@@ -334,7 +355,7 @@ def main():
                 print(f"Context: {context_text}")
                 print(f"Target : {token_to_cli(target_token)} (<not in vocab after pruning>)")
                 print("top10:", top10)
-                raise SystemExit(0)
+                return
             target_idx = int(target_pieces[0])
             if len(target_pieces) > 1:
                 target_note = " (target is multi-token; rank shown for first token)"
@@ -350,6 +371,24 @@ def main():
             print(f"Target tokens: {pieces_cli}")
         print(f"Rank  : {rank}/{V} prob={target_prob:.4e} token={token_to_cli(index_to_token[int(target_idx)])}{target_note or ''}")
         print("top10:", top10)
+
+    if bench:
+        if gen_n > 0:
+            print("ERROR: --bench and --gen are mutually exclusive")
+            raise SystemExit(1)
+        for i, s in enumerate(BENCH_SENTENCES):
+            print(f"\n=== {i + 1}/{len(BENCH_SENTENCES)} ===")
+            print(f"Sentence: {s}")
+            eval_holdout(s)
+        raise SystemExit(0)
+
+    if prompt_args:
+        prompt = " ".join(prompt_args)
+        if gen_n > 0:
+            run_once(prompt)
+            raise SystemExit(0)
+
+        eval_holdout(prompt)
         raise SystemExit(0)
 
     while True:
