@@ -15,16 +15,16 @@ HERE = Path(__file__).resolve().parent
 MODELS_DIR = HERE / "models"
 
 BENCH_SENTENCES = [
-    "the capital of france is paris",
-    "the capital of italy is rome",
-    "the quick brown fox jumps over the lazy dog",
-    "the largest planet in the solar system is jupiter",
-    "the author of hamlet is william shakespeare",
-    "machine learning is a field of artificial intelligence",
-    "new york is a city in the united states",
-    "the meaning of life is forty two",
-    "my favourite basketballer is michael jordan",
-    "i like to drink coffee in the morning",
+    "The capital of France is Paris",
+    "The capital of Italy is Rome",
+    "The quick brown fox jumps over the lazy dog",
+    "The largest planet in the solar system is Jupiter",
+    "The author of Hamlet is William Shakespeare",
+    "Machine learning is a field of artificial intelligence",
+    "New York is a city in the United States",
+    "The meaning of life is forty two",
+    "My favourite basketballer is Michael Jordan",
+    "I like to drink coffee in the morning",
 ]
 
 
@@ -365,15 +365,11 @@ def main():
         target_prob = float(torch.exp(target_logit - torch.logsumexp(logits, dim=-1)).item())
         target_ppl = float(torch.exp(torch.logsumexp(logits, dim=-1) - target_logit).item())
 
-        print(f"Context: {context_text}")
-        print(f"Target : {token_to_cli(target_token)}")
+        print(f"Context: {context_text} [{token_to_cli(target_token)}, {rank}, {target_ppl:.2f}]")
         if target_pieces is not None and len(target_pieces) > 1:
             pieces_cli = [token_to_cli(index_to_token[int(i)]) for i in target_pieces]
             print(f"Target tokens: {pieces_cli}")
-        print(
-            f"Rank  : {rank}/{V} prob={target_prob:.4e} ppl={target_ppl:.2f} token={token_to_cli(index_to_token[int(target_idx)])}{target_note or ''}"
-        )
-        print("top10:", top10)
+        print("Top 10:", top10)
 
     if bench:
         if gen_n > 0:
@@ -381,7 +377,6 @@ def main():
             raise SystemExit(1)
         for i, s in enumerate(BENCH_SENTENCES):
             print(f"\n=== {i + 1}/{len(BENCH_SENTENCES)} ===")
-            print(f"Sentence: {s}")
             eval_holdout(s)
         raise SystemExit(0)
 

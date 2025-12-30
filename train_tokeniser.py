@@ -206,10 +206,10 @@ if __name__ == "__main__":
 
     # command line input
     if len(sys.argv) < 2 or sys.argv[1] in {"-h", "--help"}:
-        print(f"usage: python {Path(__file__).name} <language> [corpus_txt]")
+        print(f"usage: python {Path(__file__).name} <language>")
         raise SystemExit(1)
 
-    # we allow non-"<language>.txt" files for training, mostly for the future
+    # "language" is just the name of the dataset, keep it simple, e.g. "welsh"
     language = sys.argv[1]
     corpus_path = Path(sys.argv[2]) if len(sys.argv) > 2 else (HERE / "data" / f"{language}.txt")
     if not corpus_path.is_absolute():
