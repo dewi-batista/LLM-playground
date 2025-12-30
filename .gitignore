@@ -1,5 +1,7 @@
-*.ckpt
 *DS_store
+
+*.ckpt
+*.npy
 
 __pycache__/
 .venv/
