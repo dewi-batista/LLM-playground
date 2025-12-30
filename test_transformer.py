@@ -363,13 +363,16 @@ def main():
         target_logit = logits[int(target_idx)]
         rank = int((logits > target_logit).sum().item()) + 1
         target_prob = float(torch.exp(target_logit - torch.logsumexp(logits, dim=-1)).item())
+        target_ppl = float(torch.exp(torch.logsumexp(logits, dim=-1) - target_logit).item())
 
         print(f"Context: {context_text}")
         print(f"Target : {token_to_cli(target_token)}")
         if target_pieces is not None and len(target_pieces) > 1:
             pieces_cli = [token_to_cli(index_to_token[int(i)]) for i in target_pieces]
             print(f"Target tokens: {pieces_cli}")
-        print(f"Rank  : {rank}/{V} prob={target_prob:.4e} token={token_to_cli(index_to_token[int(target_idx)])}{target_note or ''}")
+        print(
+            f"Rank  : {rank}/{V} prob={target_prob:.4e} ppl={target_ppl:.2f} token={token_to_cli(index_to_token[int(target_idx)])}{target_note or ''}"
+        )
         print("top10:", top10)
 
     if bench:
