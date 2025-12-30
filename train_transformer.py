@@ -1,3 +1,12 @@
+# TODO: read about warmup + cosine LR schedules
+# TODO: read about gradient accumulation (multiple forward/backward passes before stepping)
+# TODO: read about gradient clipping (stabilises training)
+# TODO: read about warmup + cosine LR schedules
+# TODO: read about AdamW + weight decay (and why you often exclude biases/norms)
+# TODO: read about why head dim is often ~64 (so n_heads ≈ d_model/64)
+# TODO: read about splitting params into decay/no-decay groups (biases + norms usually no decay)
+# TODO: read about AdamW defaults (betas/eps) used for transformers
+
 from cache_tokenisation import load_or_create_token_ids
 from pathlib import Path
 from tqdm import tqdm
@@ -67,27 +76,21 @@ batch_size = int(config["transformer"]["batch_size"])
 d_model = int(config["transformer"]["d_model"])
 dropout = 0.1
 eval_batches = 50
-eval_every = 50
-# TODO: read about gradient accumulation (simulate larger batch size)
+eval_every = 200
 grad_accum_steps = 1
-# TODO: read about gradient clipping (helps avoid exploding gradients)
 grad_clip = 1.0
 log_every = 50
 lr = float(config["transformer"]["lr"])
 min_count = 5
 num_blocks = int(config["transformer"]["num_blocks"])
 seq_len = 128
-train_tokens = 1e3#1e9
+train_tokens = 1e9
 val_frac = 0.01
-# TODO: read about warmup + cosine LR schedules
 warmup_frac = 0.02
-# TODO: read about AdamW + weight decay (and why you often exclude biases/norms)
 weight_decay = 0.1
 
 # non-config hyperparams
-# TODO: read about why head dim is often ~64 (so n_heads ≈ d_model/64)
-num_heads = d_model // 64
-d_head = d_model / num_heads # TODO: incorporate
+num_heads = d_model // 64 # so d_head = d_model / num_heads = 64
 d_ff = 4 * d_model
 
 # prune vocab of sufficiently-infrequent tokens
@@ -205,10 +208,8 @@ pe = positional_encoding(seq_len, d_model, device=device)
 
 # NOTE: Does not include U.parameters() due to weight tying
 params = list(E.parameters()) + list(model.parameters()) + list(final_lay_norm.parameters())
-# TODO: read about splitting params into decay/no-decay groups (biases + norms usually no decay)
 decay_params = [p for p in params if p.ndim >= 2]
 no_decay_params = [p for p in params if p.ndim < 2]
-# TODO: read about AdamW defaults (betas/eps) used for transformers
 optimizer = torch.optim.AdamW(
     [
         {"params": decay_params, "weight_decay": weight_decay},
@@ -276,7 +277,6 @@ pbar = tqdm(range(start_step, total_steps), desc="train", unit="step", total=tot
 log_loss = 0.0
 log_steps = 0
 for step in pbar:
-    # TODO: read about warmup + cosine LR schedules
     if step < warmup_steps:
         current_lr = lr * (step + 1) / warmup_steps
     else:
@@ -288,7 +288,6 @@ for step in pbar:
     optimizer.zero_grad()
 
     step_loss = 0.0
-    # TODO: read about gradient accumulation (multiple forward/backward passes before stepping)
     for _ in range(grad_accum_steps):
         # sample batch of token sequences (t_i, ..., t_{i + seq_len - 1})
         window_start_idx = np.random.randint(0, len(train_token_ids) - seq_len - 1, size=batch_size)
@@ -303,8 +302,6 @@ for step in pbar:
         loss = F.cross_entropy(logits.reshape(-1, V), targets.reshape(-1))
         (loss / grad_accum_steps).backward()
         step_loss += float(loss.detach())
-
-    # TODO: read about gradient clipping (stabilises training)
     torch.nn.utils.clip_grad_norm_(params, grad_clip)
     optimizer.step()
 
@@ -316,7 +313,7 @@ for step in pbar:
         log_loss = 0.0
         log_steps = 0
 
-    # TODO: checkpoint based on validation perplexity (common for deciding "best" model)
+    # checkpoint via validation perplexity
     if (step + 1) % eval_every == 0 or (step + 1) == total_steps:
         val_ppl = val_perplexity()
         pbar.set_postfix(val_ppl=f"{val_ppl:.2f}")
@@ -391,7 +388,7 @@ with torch.no_grad():
         top5 = [(token_to_cli(index_to_token[int(j)]), float(v)) for v, j in zip(values, indices)]
         print("\n---")
         print(context_text)
-        print("true:", token_to_cli(index_to_token[true_next]))
-        print("top5:", top5)
+        print("Target:", token_to_cli(index_to_token[true_next]))
+        print("Top 5:", top5)
 # keep this here do not indent!!!
 # tqdm.write(f"saved: {checkpoint_path}")
