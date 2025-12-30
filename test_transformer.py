@@ -135,12 +135,28 @@ def encode_text_to_indices(text, bpe_encode, token_id_to_index):
     idx = idx[idx >= 0]
     return idx.tolist()
 
+def encode_pre_tokens_to_indices(pre_tokens, bpe_encode, token_id_to_index):
+    token_ids = []
+    for tok in pre_tokens:
+        token_ids.extend(bpe_encode(tok))
+    if not token_ids:
+        return []
+    token_ids = torch.as_tensor(token_ids, dtype=torch.long)
+    idx = token_id_to_index[token_ids]
+    idx = idx[idx >= 0]
+    return idx.tolist()
+
+
+@torch.no_grad()
+def next_token_logits(prompt_indeces, E, model, final_lay_norm, U, pe):
+    x = torch.as_tensor(prompt_indeces, dtype=torch.long, device=E.weight.device).unsqueeze(0)  # (1, T)
+    X = E(x) + pe[: x.shape[1]]
+    return U(final_lay_norm(model(X)))[0, -1]  # (V,)
+
 
 @torch.no_grad()
 def topk_next_tokens(prompt_indeces, E, model, final_lay_norm, U, pe, index_to_token, topk: int):
-    x = torch.as_tensor(prompt_indeces, dtype=torch.long, device=E.weight.device).unsqueeze(0)  # (1, T)
-    X = E(x) + pe[: x.shape[1]]
-    logits = U(final_lay_norm(model(X)))[0, -1]  # (V,)
+    logits = next_token_logits(prompt_indeces, E, model, final_lay_norm, U, pe)
     probs = torch.softmax(logits, dim=-1)
     values, indices = torch.topk(probs, k=topk)
     return [(token_to_cli(index_to_token[int(i)]), float(v)) for v, i in zip(values, indices)]
@@ -283,7 +299,57 @@ def main():
             print("\n---\n" + text_out + "\n---")
 
     if prompt_args:
-        run_once(" ".join(prompt_args))
+        prompt = " ".join(prompt_args)
+        if gen_n > 0:
+            run_once(prompt)
+            raise SystemExit(0)
+
+        pre_tokens = list(iter_pre_tokens(prompt))
+        if len(pre_tokens) < 2:
+            run_once(prompt)
+            raise SystemExit(0)
+
+        context_tokens = pre_tokens[:-1]
+        target_token = pre_tokens[-1]
+        context_text = "".join(context_tokens)
+
+        context_indeces = encode_pre_tokens_to_indices(context_tokens, bpe_encode, token_id_to_index)
+        if not context_indeces:
+            print("<no usable context tokens after pruning>")
+            raise SystemExit(0)
+        if len(context_indeces) > seq_len:
+            context_indeces = context_indeces[-seq_len:]
+
+        logits = next_token_logits(context_indeces, E, model, final_lay_norm, U, pe)
+        probs = torch.softmax(logits, dim=-1)
+        values, indices = torch.topk(probs, k=10)
+        top10 = [(token_to_cli(index_to_token[int(i)]), float(v)) for v, i in zip(values, indices)]
+
+        target_idx = token_str_to_index.get(target_token)
+        target_pieces = None
+        target_note = None
+        if target_idx is None:
+            target_pieces = encode_pre_tokens_to_indices([target_token], bpe_encode, token_id_to_index)
+            if not target_pieces:
+                print(f"Context: {context_text}")
+                print(f"Target : {token_to_cli(target_token)} (<not in vocab after pruning>)")
+                print("top10:", top10)
+                raise SystemExit(0)
+            target_idx = int(target_pieces[0])
+            if len(target_pieces) > 1:
+                target_note = " (target is multi-token; rank shown for first token)"
+
+        target_logit = logits[int(target_idx)]
+        rank = int((logits > target_logit).sum().item()) + 1
+        target_prob = float(torch.exp(target_logit - torch.logsumexp(logits, dim=-1)).item())
+
+        print(f"Context: {context_text}")
+        print(f"Target : {token_to_cli(target_token)}")
+        if target_pieces is not None and len(target_pieces) > 1:
+            pieces_cli = [token_to_cli(index_to_token[int(i)]) for i in target_pieces]
+            print(f"Target tokens: {pieces_cli}")
+        print(f"Rank  : {rank}/{V} prob={target_prob:.4e} token={token_to_cli(index_to_token[int(target_idx)])}{target_note or ''}")
+        print("top10:", top10)
         raise SystemExit(0)
 
     while True:
