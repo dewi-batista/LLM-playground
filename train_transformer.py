@@ -1,5 +1,4 @@
 from cache_tokenisation import load_or_create_token_ids
-from datetime import datetime
 from pathlib import Path
 from tqdm import tqdm
 
@@ -9,6 +8,7 @@ import numpy as np
 import pickle
 import random
 import sys
+import time
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -24,7 +24,7 @@ model_number = int(sys.argv[3]) if (len(sys.argv) > 3) else None
 resume = len(sys.argv) > 3
 
 # NOTE: I learned recently of an "mps" device which some Apple MacBooks have.
-# Perhaps worth adding in future (my M1 MacBook Air blows).
+# Perhaps worth consdering in the future (my current M1 MacBook Air blows).
 device = torch.device("cuda") if torch.cuda.is_available() else torch.device("cpu")
 
 # directory shenanigans
@@ -41,12 +41,26 @@ vocab_path = run_dir / f"{language}_{timestamp}.json"
 with open(HERE / "./config/config.yaml", "r") as f:
     config = yaml.safe_load(f)
 
+# NOTE: The following lines are pre-training sanity checks.
+tqdm.write(f"device: {device} (cuda={torch.cuda.is_available()}, cuda_devices={torch.cuda.device_count()})")
+if torch.cuda.is_available():
+    tqdm.write(f"cuda[0]: {torch.cuda.get_device_name(0)}")
+tqdm.write(f"run_dir: {run_dir}")
+tqdm.write(f"corpus_path: {corpus_path} (exists={corpus_path.exists()})")
+tqdm.write(f"encodings_path: {encodings_path} (exists={encodings_path.exists()})")
+tqdm.write(f"vocab_path: {vocab_path} (exists={vocab_path.exists()})")
+tqdm.write(f"token_ids_path: {token_ids_path} (exists={token_ids_path.exists()})")
+if token_ids_path.exists():
+    tqdm.write(f"token_ids_path size: {token_ids_path.stat().st_size / (1024**2):.1f} MB")
+
 with open(encodings_path, "rb") as f:
     encodings = pickle.load(f)
 
 with open(vocab_path) as f:
     vocab = json.load(f)
 vocab_size = len(vocab)
+tqdm.write(f"loaded encodings: {len(encodings)} merges")
+tqdm.write(f"loaded vocab: {vocab_size} tokens")
 
 # config hyperparams
 batch_size = int(config["transformer"]["batch_size"])
@@ -80,7 +94,9 @@ d_ff = 4 * d_model
 keep_token_ids = [i for i in range(vocab_size) if int(vocab[str(i)]["count"]) >= min_count]
 index_to_token = [vocab[str(i)]["string"] for i in keep_token_ids]
 V = len(index_to_token) # TODO: understand discrepancy between vocab_size and V
+tqdm.write(f"pruned vocab: min_count={min_count} -> V={V}")
 
+t0 = time.perf_counter()
 token_ids = load_or_create_token_ids(
     language,
     timestamp,
@@ -89,13 +105,17 @@ token_ids = load_or_create_token_ids(
     encodings=encodings,
     vocab=vocab,
 )
+tqdm.write(f"loaded token_ids: len={len(token_ids):,} dtype={token_ids.dtype} ({token_ids.nbytes / (1024**2):.1f} MB) in {time.perf_counter() - t0:.1f}s")
 
 # map token IDs to embedding indices (and drop pruned tokens)
 token_id_to_index = np.full(vocab_size, -1, dtype=np.int32)
 for i, token_id in enumerate(keep_token_ids):
     token_id_to_index[token_id] = i
+tqdm.write("building indeces_corpus_to_token (this can be slow on large corpora)...")
+t0 = time.perf_counter()
 indeces_corpus_to_token = token_id_to_index[token_ids]
 indeces_corpus_to_token = indeces_corpus_to_token[indeces_corpus_to_token >= 0]
+tqdm.write(f"built indeces_corpus_to_token: len={len(indeces_corpus_to_token):,} in {time.perf_counter() - t0:.1f}s")
 
 # new ckpt if model number not passed as argument
 if model_number is None:
@@ -105,16 +125,19 @@ if model_number is None:
 else:
     checkpoint_path = run_dir / f"{language}_transformer_{timestamp}_{model_number}.ckpt"
     resume = True
+tqdm.write(f"checkpoint_path: {checkpoint_path} (resume={resume})")
 corpus_len = len(indeces_corpus_to_token)
 
 tokens_per_step = batch_size * seq_len * grad_accum_steps
 total_steps = int(math.ceil(train_tokens / tokens_per_step))
 warmup_steps = max(1, int(total_steps * warmup_frac))
+tqdm.write(f"train_tokens={train_tokens:,} tokens_per_step={tokens_per_step:,} total_steps={total_steps:,} warmup_steps={warmup_steps:,}")
 
 # split corpus into train/val (contiguous split, LM-style)
 val_start = int(corpus_len * (1.0 - val_frac))
 train_token_ids = indeces_corpus_to_token[:val_start]
 val_token_ids = indeces_corpus_to_token[val_start:]
+tqdm.write(f"train/val split: train_len={len(train_token_ids):,} val_len={len(val_token_ids):,} (val_frac={val_frac})")
 
 def positional_encoding(seq_len, d_model, device):
     positions = torch.arange(seq_len, device=device, dtype=torch.float32).unsqueeze(1) # (n, 1)
