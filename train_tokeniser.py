@@ -5,6 +5,7 @@ from collections import Counter
 from datetime import datetime
 from itertools import pairwise
 from pathlib import Path
+from tqdm import tqdm
 
 import heapq
 import json
@@ -112,8 +113,7 @@ def learn_encodings(corpus, language):
     heapq.heapify(heap)
 
     encodings = []  # items are of the form [[a, b], new_token]
-    for i in range(vocab_size_max):
-
+    for i in tqdm(range(vocab_size_max), desc="Learning encodings", bar_format="{l_bar}{bar} | {elapsed} | {rate_fmt}"):
         while heap:
             neg_freq, pair = heapq.heappop(heap)
             freq = -neg_freq
@@ -195,7 +195,7 @@ def learn_encodings(corpus, language):
     count_width = len(str(max(token_id_counts)))
     with open(vocab_path, "w") as f:
         f.write("{\n")
-        for token_id in range(vocab_size):
+        for token_id in tqdm(range(vocab_size), desc="Writing JSON file"):
             key = str(token_id)
             v = vocab[key]
             string_json = json.dumps(v["string"], ensure_ascii=False)
