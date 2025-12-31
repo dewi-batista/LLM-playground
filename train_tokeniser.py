@@ -193,6 +193,7 @@ def learn_encodings(corpus, language):
 
     index_width = len(str(vocab_size - 1))
     count_width = len(str(max(token_id_counts)))
+    string_width = max(len(json.dumps(vocab[str(i)]["string"], ensure_ascii=False)) for i in range(vocab_size))
     max_neg_prob = max(vocab[str(i)]["neg_prob"] for i in range(vocab_size))
     neg_prob_width = len(f"{max_neg_prob:.10e}")
     with open(vocab_path, "w") as f:
@@ -201,6 +202,7 @@ def learn_encodings(corpus, language):
             key = str(token_id)
             v = vocab[key]
             string_json = json.dumps(v["string"], ensure_ascii=False)
+            string_json_pad = " " * (string_width - len(string_json))
             string_pad = " "
             neg_prob_str = f"{v['neg_prob']:.10e}"
             neg_prob_pad = " " * (neg_prob_width - len(neg_prob_str))
@@ -208,7 +210,7 @@ def learn_encodings(corpus, language):
                 "{"
                 f'"index": {v["index"]:>{index_width}d}, '
                 f'"count": {v["count"]:>{count_width}d}, '
-                f'"string": {string_pad}{string_json}, '
+                f'"string": {string_pad}{string_json}{string_json_pad}, '
                 f'"neg_prob": {neg_prob_pad}{neg_prob_str}'
                 "}"
             )
