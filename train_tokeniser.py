@@ -202,7 +202,8 @@ def learn_encodings(corpus, language):
             key = str(token_id)
             v = vocab[key]
             string_json = json.dumps(v["string"], ensure_ascii=False)
-            string_pad = " " * max_leading_spaces
+            leading_spaces = len(v["string"]) - len(v["string"].lstrip(" "))
+            string_pad = " " * (max_leading_spaces - leading_spaces)
             neg_prob_str = f"{v['neg_prob']:.10e}"
             neg_prob_pad = " " * (neg_prob_width - len(neg_prob_str))
             subdict = (
