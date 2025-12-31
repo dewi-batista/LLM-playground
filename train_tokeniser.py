@@ -193,17 +193,19 @@ def learn_encodings(corpus, language):
 
     index_width = len(str(vocab_size - 1))
     count_width = len(str(max(token_id_counts)))
+    max_leading_spaces = max(len(vocab[str(i)]["string"]) - len(vocab[str(i)]["string"].lstrip(" ")) for i in range(vocab_size))
     with open(vocab_path, "w") as f:
         f.write("{\n")
         for token_id in tqdm(range(vocab_size), desc="Writing JSON file"):
             key = str(token_id)
             v = vocab[key]
             string_json = json.dumps(v["string"], ensure_ascii=False)
+            string_pad = " " * (max_leading_spaces - (len(v["string"]) - len(v["string"].lstrip(" "))))
             subdict = (
                 "{"
                 f'"index": {v["index"]:>{index_width}d}, '
                 f'"count": {v["count"]:>{count_width}d}, '
-                f'"string": {string_json}, '
+                f'"string": {string_pad}{string_json}, '
                 f'"neg_prob": {v["neg_prob"]}'
                 "}"
             )
