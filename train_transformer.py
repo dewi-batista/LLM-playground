@@ -275,8 +275,10 @@ def val_perplexity():
 
 pbar = tqdm(range(start_step, total_steps), desc="train", unit="step", total=total_steps, initial=start_step)
 log_loss = 0.0
+log_time = 0.0
 log_steps = 0
 for step in pbar:
+    step_t0 = time.perf_counter()
     if step < warmup_steps:
         current_lr = lr * (step + 1) / warmup_steps
     else:
@@ -305,11 +307,20 @@ for step in pbar:
     torch.nn.utils.clip_grad_norm_(params, grad_clip)
     optimizer.step()
 
+    log_time += time.perf_counter() - step_t0
     log_loss += step_loss / grad_accum_steps
     log_steps += 1
 
     if (step + 1) % log_every == 0:
-        pbar.set_postfix(recent_loss=f"{log_loss / log_steps:.4f}", lr=f"{current_lr:.2e}")
+        step_s = log_time / log_steps
+        tok_s = tokens_per_step / step_s
+        pbar.set_postfix(
+            recent_loss=f"{log_loss / log_steps:.4f}",
+            lr=f"{current_lr:.2e}",
+            step_ms=f"{step_s * 1000:.1f}",
+            tok_s=f"{tok_s / 1e6:.2f}M",
+        )
+        log_time = 0.0
         log_loss = 0.0
         log_steps = 0
 
