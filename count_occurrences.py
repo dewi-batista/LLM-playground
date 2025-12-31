@@ -158,7 +158,18 @@ def count_and_snippets_tokens_in_dataset(tokens: list[str], split: str, show: in
 
 if len(sys.argv) < 2 or sys.argv[1] in {"-h", "--help"}:
     print(
-        f"usage: python {Path(__file__).name} <sequence...> [--path file] [--dataset] [--split train] [--show 5] [--context 80] [--tokens]"
+        f"usage: python {Path(__file__).name} <words...> [--path file] [--dataset] [--split train] [--show 5] [--context 80] [--tokens]\n"
+        "\n"
+        "examples:\n"
+        f"  # phrase search in local file (default mode; words are joined with spaces)\n"
+        f"  python {Path(__file__).name} New York --path {DEFAULT_PATH.relative_to(HERE)} --show 5\n"
+        "\n"
+        "  # token co-occurrence search (each arg is its own token; max 5)\n"
+        f"  python {Path(__file__).name} New York United States --tokens --path {DEFAULT_PATH.relative_to(HERE)} --context 80 --show 5\n"
+        f"  python {Path(__file__).name} \"New York\" \"United States\" --tokens --path {DEFAULT_PATH.relative_to(HERE)}\n"
+        "\n"
+        "  # dataset mode (requires `datasets`; counts lines containing the phrase/tokens)\n"
+        f"  python {Path(__file__).name} New York --dataset --split train\n"
     )
     raise SystemExit(1)
 

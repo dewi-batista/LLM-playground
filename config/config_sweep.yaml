@@ -1,0 +1,28 @@
+# Hyperparameter sweep for `train_transformer.py`.
+#
+# Run with:
+#   python train_transformer.py <language> <vocab_timestamp> --sweep config/transformer_sweep.yaml
+#
+# Supported keys:
+#   batch_size, seq_len, d_model, num_blocks, lr, train_tokens, dropout
+#
+# Note:
+# - Each item under `runs` is trained sequentially (one after the other).
+# - Checkpoints are saved in `models/<language>/<vocab_timestamp>/`.
+
+runs:
+  - batch_size: 97
+    seq_len: 512
+    d_model: 384
+    num_blocks: 6
+    lr: 1e-3
+    train_tokens: 1000000000
+    dropout: 0.1
+
+  - batch_size: 97
+    seq_len: 512
+    d_model: 384
+    num_blocks: 6
+    lr: 5e-4
+    train_tokens: 1000000000
+    dropout: 0.1

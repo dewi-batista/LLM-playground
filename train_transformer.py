@@ -14,8 +14,10 @@ from tqdm import tqdm
 import json
 import math
 import numpy as np
+import os
 import pickle
 import random
+import subprocess
 import sys
 import time
 import torch
@@ -25,12 +27,29 @@ import yaml
 
 # command line input
 if len(sys.argv) < 3 or sys.argv[1] in {"-h", "--help"}:
-    print(f"usage: python {Path(__file__).name} <language> <vocab_timestamp> [model_number]")
+    print(
+        f"usage: python {Path(__file__).name} <language> <vocab_timestamp> [model_number]\n"
+        "       python train_transformer.py <language> <vocab_timestamp> --sweep config/transformer_sweep.yaml"
+    )
     raise SystemExit(1)
-language = sys.argv[1]
-timestamp = sys.argv[2]
-model_number = int(sys.argv[3]) if (len(sys.argv) > 3) else None
-resume = len(sys.argv) > 3
+
+args = sys.argv[1:]
+language = args[0]
+timestamp = args[1]
+sweep_path = None
+if "--sweep" in args:
+    i = args.index("--sweep")
+    sweep_path = Path(args[i + 1])
+    args = args[:i] + args[i + 2 :]
+
+model_number = int(args[2]) if len(args) > 2 else None
+resume = model_number is not None
+if len(args) > 3:
+    print(f"ERROR: unknown args: {args[3:]}")
+    raise SystemExit(1)
+if sweep_path is not None and resume:
+    print("ERROR: can't use --sweep and resume at the same time")
+    raise SystemExit(1)
 
 # NOTE: I learned recently of an "mps" device which some Apple MacBooks have.
 # Perhaps worth consdering in the future (my current M1 MacBook Air blows).
@@ -47,10 +66,60 @@ encodings_path = run_dir / f"{language}_{timestamp}.pkl"
 token_ids_path = run_dir / f"{language}_{timestamp}.npy"
 vocab_path = run_dir / f"{language}_{timestamp}.json"
 
-with open(HERE / "./config/config.yaml", "r") as f:
+base_config_path = HERE / "config" / "config.yaml"
+if sweep_path is not None:
+    if not sweep_path.is_absolute():
+        sweep_path = HERE / sweep_path
+    with open(base_config_path, "r") as f:
+        base_config = yaml.safe_load(f)
+    with open(sweep_path, "r") as f:
+        sweep = yaml.safe_load(f)
+
+    runs = sweep.get("runs") if isinstance(sweep, dict) else sweep
+    if not isinstance(runs, list) or not runs:
+        print("ERROR: sweep file must be a non-empty list (or {runs: [...]})")
+        raise SystemExit(1)
+
+    allowed = {
+        "batch_size",
+        "seq_len",
+        "d_model",
+        "num_blocks",
+        "lr",
+        "train_tokens",
+        "dropout",
+    }
+    for run in runs:
+        unknown = sorted(set(run) - allowed)
+        if unknown:
+            print(f"ERROR: unknown sweep keys: {unknown}")
+            raise SystemExit(1)
+
+    script_path = Path(__file__).resolve()
+    for idx, run in enumerate(runs, start=1):
+        config = dict(base_config)
+        config["transformer"] = dict(base_config.get("transformer", {}))
+        config["transformer"].update(run)
+
+        run_config_path = run_dir / f"transformer_sweep_{idx}.yaml"
+        with open(run_config_path, "w") as f:
+            yaml.safe_dump(config, f)
+
+        env = dict(os.environ)
+        env["TRANSFORMER_CONFIG_PATH"] = str(run_config_path)
+        print(f"\n=== sweep {idx}/{len(runs)}: {run} ===")
+        subprocess.run([sys.executable, str(script_path), language, timestamp], check=True, env=env)
+
+    raise SystemExit(0)
+
+config_path = Path(os.environ.get("TRANSFORMER_CONFIG_PATH", str(base_config_path)))
+if not config_path.is_absolute():
+    config_path = HERE / config_path
+with open(config_path, "r") as f:
     config = yaml.safe_load(f)
 
 # NOTE: The following lines are pre-training sanity checks.
+tqdm.write(f"config_path: {config_path}")
 tqdm.write(f"device: {device} (cuda={torch.cuda.is_available()}, cuda_devices={torch.cuda.device_count()})")
 if torch.cuda.is_available():
     tqdm.write(f"cuda[0]: {torch.cuda.get_device_name(0)}")
@@ -74,7 +143,7 @@ tqdm.write(f"loaded vocab: {vocab_size} tokens")
 # config hyperparams
 batch_size = int(config["transformer"]["batch_size"])
 d_model = int(config["transformer"]["d_model"])
-dropout = 0.1
+dropout = float(config["transformer"].get("dropout", 0.1))
 eval_batches = 50
 eval_every = 200
 grad_accum_steps = 1
@@ -83,8 +152,8 @@ log_every = 20
 lr = float(config["transformer"]["lr"])
 min_count = 5
 num_blocks = int(config["transformer"]["num_blocks"])
-seq_len = 512
-train_tokens = 1e9
+seq_len = int(config["transformer"].get("seq_len", 512))
+train_tokens = float(config["transformer"].get("train_tokens", 1e9))
 val_frac = 0.01
 warmup_frac = 0.02
 weight_decay = 0.1
@@ -318,7 +387,7 @@ for step in pbar:
             recent_loss=f"{log_loss / log_steps:.4f}",
             lr=f"{current_lr:.2e}",
             step_ms=f"{step_s * 1000:.1f}",
-            tok_s=f"{tok_s / 1e6:.2f}M",
+            tok_s=f"{tok_s / 1e6:.3f}M",
         )
         log_time = 0.0
         log_loss = 0.0
