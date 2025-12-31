@@ -190,13 +190,26 @@ def learn_encodings(corpus, language):
     }
     vocab_path = run_dir / f"{language}_{run_timestamp}.json"
     encodings_path = run_dir / f"{language}_{run_timestamp}.pkl"
+
+    index_width = len(str(vocab_size - 1))
+    count_width = len(str(max(token_id_counts)))
     with open(vocab_path, "w") as f:
         f.write("{\n")
         for token_id in range(vocab_size):
             key = str(token_id)
-            subdict = json.dumps(vocab[key], ensure_ascii=False, separators=(", ", ": "))
+            v = vocab[key]
+            string_json = json.dumps(v["string"], ensure_ascii=False)
+            subdict = (
+                "{"
+                f'"index": {v["index"]:>{index_width}d}, '
+                f'"count": {v["count"]:>{count_width}d}, '
+                f'"string": {string_json}, '
+                f'"neg_prob": {v["neg_prob"]}'
+                "}"
+            )
             comma = "," if token_id < vocab_size - 1 else ""
-            f.write(f'    "{key}": {subdict}{comma}\n')
+            pad = " " * (index_width - len(key))
+            f.write(f'    "{key}": {pad}{subdict}{comma}\n')
         f.write("}\n")
     with open(encodings_path, "wb") as f:
         pickle.dump(encodings, f)
