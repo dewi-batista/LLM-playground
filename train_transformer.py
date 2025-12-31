@@ -342,7 +342,7 @@ def val_perplexity():
     mean_loss = total_loss / eval_batches
     return math.exp(mean_loss)
 
-pbar = tqdm(range(start_step, total_steps), desc="train", unit="step", total=total_steps, initial=start_step)
+pbar = tqdm(range(start_step, total_steps), desc="train", unit="batch", total=total_steps, initial=start_step)
 log_loss = 0.0
 log_time = 0.0
 log_steps = 0

@@ -1,5 +1,4 @@
 from datasets import load_dataset
-
 from tqdm import tqdm
 
 data = load_dataset("wikitext", "wikitext-103-v1")
@@ -20,7 +19,7 @@ replacements = {
     " 's": "'s",
 }
 
-with open("./data/wiki103.txt", "w", encoding="utf-8") as f:
+with open("./wiki103.txt", "w", encoding="utf-8") as f:
     for line in tqdm(lines, desc="Writing wiki103.txt"):
         if line.strip():
             for k, v in replacements.items():
