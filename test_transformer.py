@@ -10,7 +10,6 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-
 HERE = Path(__file__).resolve().parent
 MODELS_DIR = HERE / "models"
 
