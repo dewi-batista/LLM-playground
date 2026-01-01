@@ -424,4 +424,5 @@ for step in pbar:
             )
             if ok:
                 best_val_ppl = val_ppl
+                tqdm.write(f"saved: {checkpoint_path} (step={step + 1}, val_ppl={val_ppl:.2f})")
 tqdm.write(f"saved: {checkpoint_path}")
