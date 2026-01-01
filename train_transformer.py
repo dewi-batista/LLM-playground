@@ -200,25 +200,48 @@ class TransformerBlock(nn.Module):
 
     def forward(self, X):
         B, T, _ = X.shape
-        Q, K, V = self.W_QKV(X).chunk(3, dim=-1)
+        # TODO: read about pre-LN vs post-LN transformers (GPT-2 is pre-LN)
+        H = self.ln1(X)
+        Q, K, V = self.W_QKV(H).chunk(3, dim=-1)
         Q = Q.reshape(B, T, self.num_heads, self.d_head).transpose(1, 2)
         K = K.reshape(B, T, self.num_heads, self.d_head).transpose(1, 2)
         V = V.reshape(B, T, self.num_heads, self.d_head).transpose(1, 2)
 
         O = F.scaled_dot_product_attention(Q, K, V, is_causal=True)
         O = O.transpose(1, 2).reshape(B, T, self.num_heads * self.d_head)
-        O = self.dropout_attn(self.W_O(O))
-        H_1 = self.ln1(X + O)
+        X = X + self.dropout_attn(self.W_O(O))
 
-        H_2 = self.dropout_ffn(self.W_2(self.act(self.W_1(H_1))))
-        H_3 = self.ln2(H_1 + H_2)
-        return H_3
+        H = self.ln2(X)
+        X = X + self.dropout_ffn(self.W_2(self.act(self.W_1(H))))
+        return X
 
 dropout_embed = nn.Dropout(dropout).to(device)
 E = nn.Embedding(V, d_model).to(device)
 final_lay_norm = nn.LayerNorm(d_model).to(device)
 model = nn.Sequential(*[TransformerBlock(d_model, d_ff, num_heads, dropout) for _ in range(num_blocks)]).to(device)
 U = nn.Linear(d_model, V, bias=False).to(device)
+
+# TODO: read about GPT-2 init (std=0.02, plus scaled residual projections)
+if not resume:
+    def init_gpt2(m):
+        if isinstance(m, nn.Linear):
+            nn.init.normal_(m.weight, mean=0.0, std=0.02)
+            if m.bias is not None:
+                nn.init.zeros_(m.bias)
+        elif isinstance(m, nn.Embedding):
+            nn.init.normal_(m.weight, mean=0.0, std=0.02)
+        elif isinstance(m, nn.LayerNorm):
+            nn.init.ones_(m.weight)
+            nn.init.zeros_(m.bias)
+
+    E.apply(init_gpt2)
+    model.apply(init_gpt2)
+    final_lay_norm.apply(init_gpt2)
+
+    resid_scale = math.sqrt(2 * num_blocks)
+    for block in model:
+        block.W_O.weight.data /= resid_scale
+        block.W_2.weight.data /= resid_scale
 
 # TODO: check that this is what it's intended to be (weight tying)
 U.weight = E.weight
