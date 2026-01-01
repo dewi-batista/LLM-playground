@@ -3,6 +3,7 @@ from pathlib import Path
 from tqdm import tqdm
 
 import json
+import math
 import pickle
 import re
 import sys
@@ -226,6 +227,29 @@ def main():
     tqdm.write(f"checkpoint: {checkpoint_path}")
 
     ckpt = torch.load(checkpoint_path, map_location="cpu", weights_only=False)
+
+    global_step = ckpt.get("global_step")
+    total_steps = ckpt.get("total_steps")
+    tokens_per_step = ckpt.get("tokens_per_step")
+    train_tokens = ckpt.get("train_tokens")
+    val_ppl = ckpt.get("val_ppl")
+    best_val_ppl = ckpt.get("best_val_ppl")
+
+    if global_step is not None:
+        if total_steps is not None:
+            tqdm.write(f"trained: global_step={int(global_step):_}/{int(total_steps):_}")
+        else:
+            tqdm.write(f"trained: global_step={int(global_step):_}")
+    if global_step is not None and tokens_per_step is not None:
+        seen_tokens = int(float(global_step) * float(tokens_per_step))
+        if train_tokens is not None:
+            tqdm.write(f"tokens : seen~{seen_tokens:_} / budget={int(float(train_tokens)):_}")
+        else:
+            tqdm.write(f"tokens : seen~{seen_tokens:_}")
+    if val_ppl is not None:
+        tqdm.write(f"val   : ppl={float(val_ppl):.2f} (nll={math.log(float(val_ppl)):.4f})")
+    if best_val_ppl is not None:
+        tqdm.write(f"best  : ppl={float(best_val_ppl):.2f} (nll={math.log(float(best_val_ppl)):.4f})")
 
     vocab_path = Path(ckpt.get("bpe_vocab_path", run_dir / f"{language}_{timestamp}.json"))
     if not vocab_path.is_absolute():
