@@ -42,7 +42,7 @@ encodings_path = tokeniser_dir / "merges.pkl"
 token_ids_path = tokeniser_dir / "token_ids.npy"
 vocab_path = tokeniser_dir / "vocabulary.json"
 
-with open(HERE / "./config/config.yaml", "r") as f:
+with open(HERE / "config.yaml", "r") as f:
     config = yaml.safe_load(f)
 
 with open(encodings_path, "rb") as f:

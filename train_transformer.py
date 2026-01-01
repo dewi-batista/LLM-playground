@@ -40,7 +40,7 @@ HERE = Path(__file__).resolve().parent
 run_dir = HERE / "models" / language / timestamp
 run_dir.mkdir(parents=True, exist_ok=True)
 
-config_path = HERE / "config" / "config.yaml"
+config_path = HERE / "config.yaml"
 corpus_path = HERE / "data" / f"{language}.txt"
 vocab_path = run_dir / "vocabulary.json"
 encodings_path = run_dir / "merges.pkl"
