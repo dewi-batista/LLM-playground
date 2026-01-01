@@ -43,6 +43,8 @@ if len(args) > 3:
 # NOTE: I learned recently of an "mps" device which some Apple MacBooks have.
 # Perhaps worth consdering in the future (my current M1 MacBook Air blows).
 device = torch.device("cuda") if torch.cuda.is_available() else torch.device("cpu")
+amp_enabled = device.type == "cuda"
+amp_dtype = torch.bfloat16
 
 # directory shenanigans
 HERE = Path(__file__).resolve().parent
@@ -61,6 +63,7 @@ tqdm.write(f"config_path: {config_path}")
 tqdm.write(f"device: {device} (cuda={torch.cuda.is_available()}, cuda_devices={torch.cuda.device_count()})")
 if torch.cuda.is_available():
     tqdm.write(f"cuda[0]: {torch.cuda.get_device_name(0)}")
+tqdm.write(f"amp: {'bf16' if amp_enabled else 'off'}")
 tqdm.write(f"run_dir: {run_dir}")
 tqdm.write(f"corpus_path: {corpus_path} (exists={corpus_path.exists()})")
 tqdm.write(f"encodings_path: {encodings_path} (exists={encodings_path.exists()})")
@@ -269,9 +272,10 @@ def val_perplexity():
             context_window = torch.as_tensor(context_window, dtype=torch.long, device=device)
             targets = torch.as_tensor(targets, dtype=torch.long, device=device)
 
-            X = dropout_embed(E(context_window) + pe)
-            logits = U(final_lay_norm(model(X)))
-            loss = F.cross_entropy(logits.reshape(-1, V), targets.reshape(-1))
+            with torch.autocast(device_type=device.type, dtype=amp_dtype, enabled=amp_enabled):
+                X = dropout_embed(E(context_window) + pe)
+                logits = U(final_lay_norm(model(X)))
+                loss = F.cross_entropy(logits.reshape(-1, V), targets.reshape(-1))
             total_loss += float(loss)
 
     model.train()
@@ -309,9 +313,10 @@ for step in pbar:
         context_window = torch.as_tensor(context_window, dtype=torch.long, device=device)
         targets = torch.as_tensor(targets, dtype=torch.long, device=device)
 
-        X = dropout_embed(E(context_window) + pe)
-        logits = U(final_lay_norm(model(X)))
-        loss = F.cross_entropy(logits.reshape(-1, V), targets.reshape(-1))
+        with torch.autocast(device_type=device.type, dtype=amp_dtype, enabled=amp_enabled):
+            X = dropout_embed(E(context_window) + pe)
+            logits = U(final_lay_norm(model(X)))
+            loss = F.cross_entropy(logits.reshape(-1, V), targets.reshape(-1))
         (loss / grad_accum_steps).backward()
         step_loss += float(loss.detach())
     torch.nn.utils.clip_grad_norm_(params, grad_clip)
@@ -400,8 +405,9 @@ with torch.no_grad():
         true_next = int(indeces_corpus_to_token[start + seq_len])
 
         x = torch.as_tensor(context, dtype=torch.long, device=device).unsqueeze(0)
-        X = dropout_embed(E(x) + pe)
-        logits = U(final_lay_norm(model(X)))[0, -1]  # (V,)
+        with torch.autocast(device_type=device.type, dtype=amp_dtype, enabled=amp_enabled):
+            X = dropout_embed(E(x) + pe)
+            logits = U(final_lay_norm(model(X)))[0, -1]  # (V,)
         probs = torch.softmax(logits, dim=-1)
         values, indices = torch.topk(probs, k=10)
 
