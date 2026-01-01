@@ -324,8 +324,7 @@ def atomic_torch_save(obj: dict, path: Path) -> bool:
             pass
         return False
 
-# TODO: Why is there a space before the batch/s num? e.g. "  2.98 batch/s"?
-pbar = tqdm(range(start_step, total_steps), desc="train", unit=" batch", total=total_steps, initial=start_step)
+pbar = tqdm(range(start_step, total_steps), desc="Train", unit=" batch", total=total_steps, initial=start_step)
 log_loss = 0.0
 log_time = 0.0
 log_steps = 0
