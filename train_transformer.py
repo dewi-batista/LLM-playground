@@ -11,6 +11,7 @@ from cache_tokenisation import load_or_create_token_ids
 from pathlib import Path
 from tqdm import tqdm
 
+import inspect
 import json
 import math
 import numpy as np
@@ -46,6 +47,11 @@ device = torch.device("cuda") if torch.cuda.is_available() else torch.device("cp
 amp_enabled = device.type == "cuda"
 amp_dtype = torch.bfloat16
 
+if device.type == "cuda":
+    # TODO: read about TF32 and why it can be a big speedup on Ampere+ GPUs
+    torch.backends.cuda.matmul.allow_tf32 = True
+    torch.backends.cudnn.allow_tf32 = True
+
 # directory shenanigans
 HERE = Path(__file__).resolve().parent
 
@@ -64,6 +70,7 @@ tqdm.write(f"device: {device} (cuda={torch.cuda.is_available()}, cuda_devices={t
 if torch.cuda.is_available():
     tqdm.write(f"cuda[0]: {torch.cuda.get_device_name(0)}")
 tqdm.write(f"amp: {'bf16' if amp_enabled else 'off'}")
+tqdm.write(f"tf32: {'on' if (device.type == 'cuda' and torch.backends.cuda.matmul.allow_tf32) else 'off'}")
 tqdm.write(f"run_dir: {run_dir}")
 tqdm.write(f"corpus_path: {corpus_path} (exists={corpus_path.exists()})")
 tqdm.write(f"encodings_path: {encodings_path} (exists={encodings_path.exists()})")
@@ -196,9 +203,8 @@ class TransformerBlock(nn.Module):
         K = K.reshape(B, T, self.num_heads, self.d_head).transpose(1, 2)
         V = V.reshape(B, T, self.num_heads, self.d_head).transpose(1, 2)
 
-        M = torch.triu(X.new_full((T, T), float("-inf")), diagonal=1)
-        A = torch.softmax((Q @ K.transpose(-2, -1)) / (self.d_head**0.5) + M, dim=-1)
-        O = A @ V
+        # TODO: read about PyTorch SDPA / FlashAttention kernels
+        O = F.scaled_dot_product_attention(Q, K, V, is_causal=True)
         O = O.transpose(1, 2).reshape(B, T, self.num_heads * self.d_head)
         O = self.dropout_attn(self.W_O(O))
         H_1 = self.ln1(X + O)
@@ -223,15 +229,20 @@ pe = positional_encoding(seq_len, d_model, device=device)
 params = list(E.parameters()) + list(model.parameters()) + list(final_lay_norm.parameters())
 decay_params = [p for p in params if p.ndim >= 2]
 no_decay_params = [p for p in params if p.ndim < 2]
+adamw_sig = inspect.signature(torch.optim.AdamW)
+fused_adamw = device.type == "cuda" and ("fused" in adamw_sig.parameters)
+optimizer_kwargs = {"lr": lr, "betas": (0.9, 0.95), "eps": 1e-8}
+if fused_adamw:
+    # TODO: read about fused AdamW (and when it helps)
+    optimizer_kwargs["fused"] = True
 optimizer = torch.optim.AdamW(
     [
         {"params": decay_params, "weight_decay": weight_decay},
         {"params": no_decay_params, "weight_decay": 0.0},
     ],
-    lr=lr,
-    betas=(0.9, 0.95),
-    eps=1e-8,
+    **optimizer_kwargs,
 )
+tqdm.write(f"adamw_fused: {'on' if fused_adamw else 'off'}")
 
 start_step = 0
 best_val_ppl = float("inf")
@@ -239,7 +250,11 @@ if resume:
     assert checkpoint_path.exists()
     ckpt = torch.load(checkpoint_path, map_location=device, weights_only=False)
     E.load_state_dict(ckpt["E_state_dict"])
-    model.load_state_dict(ckpt["model_state_dict"])
+    model_state_dict = ckpt["model_state_dict"]
+    if len(model_state_dict) > 0 and next(iter(model_state_dict.keys())).startswith("_orig_mod."):
+        # if checkpoint was saved from torch.compile(model)
+        model_state_dict = {k.removeprefix("_orig_mod."): v for k, v in model_state_dict.items()}
+    model.load_state_dict(model_state_dict)
     final_lay_norm.load_state_dict(ckpt["final_lay_norm_state_dict"])
     optimizer.load_state_dict(ckpt["optimizer_state_dict"])
     start_step = int(ckpt.get("global_step", 0))
@@ -251,6 +266,12 @@ if resume:
     if torch.cuda.is_available() and ckpt["rng_state_cuda"] is not None:
         torch.cuda.set_rng_state_all([s.cpu() for s in ckpt["rng_state_cuda"]])
     tqdm.write(f"resuming from: {checkpoint_path} (step={start_step}, best_val_ppl={best_val_ppl:.2f})")
+
+compile_enabled = device.type == "cuda" and hasattr(torch, "compile")
+if compile_enabled:
+    # TODO: read about torch.compile (and why it can speed up steady-state training)
+    tqdm.write("torch.compile: on")
+    model = torch.compile(model, mode="reduce-overhead")
 
 offsets = np.arange(seq_len, dtype=np.int64)
 
@@ -345,10 +366,11 @@ for step in pbar:
         pbar.set_postfix(val_ppl=f"{val_ppl:.2f}")
         if val_ppl < best_val_ppl:
             best_val_ppl = val_ppl
+            model_to_save = model._orig_mod if hasattr(model, "_orig_mod") else model
             torch.save(
                 {
                     "E_state_dict": E.state_dict(),
-                    "model_state_dict": model.state_dict(),
+                    "model_state_dict": model_to_save.state_dict(),
                     "final_lay_norm_state_dict": final_lay_norm.state_dict(),
                     "U_state_dict": U.state_dict(),
                     "optimizer_state_dict": optimizer.state_dict(),
