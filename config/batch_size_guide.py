@@ -8,7 +8,7 @@ Why there isn't a perfect formula
 - Peak VRAM happens during forward/backward/optimizer.step (not at a single obvious line).
 
 Still, for a fixed model + fixed seq_len, peak VRAM is usually ~linear in batch_size,
-so you can estimate the max batch size from 1–2 quick measurements.
+so you can estimate the max batch size from 1-2 quick measurements.
 
 Key idea
 --------
