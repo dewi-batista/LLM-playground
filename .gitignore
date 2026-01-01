@@ -7,5 +7,5 @@ __pycache__/
 .venv/
 
 ,source.sh
-bookcorp.txt
+openwebtext.txt
 wiki103.txt
