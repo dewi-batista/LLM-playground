@@ -2,7 +2,7 @@ from pathlib import Path
 
 import json
 
-HERE = Path(__file__).resolve().parent
+HERE = Path(__file__).resolve().parents[1]
 
 vocab_path = HERE / "artifacts" / "vocabulary_full_words.json"
 if not vocab_path.exists():

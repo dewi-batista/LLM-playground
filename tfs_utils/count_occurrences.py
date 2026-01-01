@@ -4,7 +4,7 @@ import mmap
 import sys
 
 
-HERE = Path(__file__).resolve().parent
+HERE = Path(__file__).resolve().parents[1]
 DEFAULT_PATH = HERE / "data" / "wiki103.txt"
 
 
