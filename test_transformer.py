@@ -16,6 +16,9 @@ MODELS_DIR = HERE / "models"
 
 BENCH_SENTENCES = [
     "The capital of France is Paris",
+    "Paris is the capital of France",
+    "Paris is the capital of France.",
+    "Paris is the capital of France,",
     "The capital of Italy is Rome",
     "The quick brown fox jumps over the lazy dog",
     "The largest planet in the solar system is Jupiter",
@@ -366,7 +369,7 @@ def main():
         logits = next_token_logits(context_indeces, E, model, final_lay_norm, U, pe)
         probs = torch.softmax(logits, dim=-1)
         values, indices = torch.topk(probs, k=10)
-        top10 = [(token_to_cli(index_to_token[int(i)]), float(v)) for v, i in zip(values, indices)]
+        top10 = [token_to_cli(index_to_token[int(i)]) for v, i in zip(values, indices)]
 
         target_idx = token_str_to_index.get(target_token)
         target_pieces = None
@@ -374,7 +377,7 @@ def main():
         if target_idx is None:
             target_pieces = encode_pre_tokens_to_indices([target_token], bpe_encode, token_id_to_index)
             if not target_pieces:
-                print(f"Context: {context_text}")
+                print(f"{context_text}")
                 print(f"Target : {token_to_cli(target_token)} (<not in vocab after pruning>)")
                 print("top10:", top10)
                 return
@@ -387,11 +390,11 @@ def main():
         target_prob = float(torch.exp(target_logit - torch.logsumexp(logits, dim=-1)).item())
         # target_ppl = float(torch.exp(torch.logsumexp(logits, dim=-1) - target_logit).item())
 
-        print(f"Context: {context_text} [{token_to_cli(target_token)}, {rank}]")
+        print(f"\n{context_text} [{token_to_cli(target_token)}, {rank}]")
         if target_pieces is not None and len(target_pieces) > 1:
             pieces_cli = [token_to_cli(index_to_token[int(i)]) for i in target_pieces]
             print(f"Target tokens: {pieces_cli}")
-        # print("Top 10:", top10)
+        print(top10)
 
     if bench:
         if gen_n > 0:
@@ -400,6 +403,7 @@ def main():
         for i, s in enumerate(BENCH_SENTENCES):
             # print(f"\n=== {i + 1}/{len(BENCH_SENTENCES)} ===")
             eval_holdout(s)
+        print()
         raise SystemExit(0)
 
     if prompt_args:

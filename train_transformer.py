@@ -229,7 +229,7 @@ U.weight = E.weight
 # with fixed seq_len, positional encoding only needs to be computed once
 pe = positional_encoding(seq_len, d_model, device=device)
 
-# NOTE: Does not include U.parameters() due to weight tying
+# NOTE: Does not include U.parameters() due to weight tying.
 params = list(E.parameters()) + list(model.parameters()) + list(final_lay_norm.parameters())
 decay_params = [p for p in params if p.ndim >= 2]
 no_decay_params = [p for p in params if p.ndim < 2]
