@@ -310,6 +310,20 @@ def val_perplexity():
     mean_loss = total_loss / eval_batches
     return math.exp(mean_loss)
 
+def atomic_torch_save(obj: dict, path: Path) -> bool:
+    tmp_path = path.with_suffix(path.suffix + ".tmp")
+    try:
+        torch.save(obj, tmp_path)
+        os.replace(tmp_path, path)
+        return True
+    except Exception as e:
+        tqdm.write(f"WARNING: checkpoint save failed: {e}")
+        try:
+            tmp_path.unlink(missing_ok=True)
+        except Exception:
+            pass
+        return False
+
 pbar = tqdm(range(start_step, total_steps), desc="train", unit=" batch", total=total_steps, initial=start_step)
 log_loss = 0.0
 log_time = 0.0
@@ -367,9 +381,8 @@ for step in pbar:
         val_ppl = val_perplexity()
         pbar.set_postfix(val_ppl=f"{val_ppl:.2f}")
         if val_ppl < best_val_ppl:
-            best_val_ppl = val_ppl
             model_to_save = model._orig_mod if hasattr(model, "_orig_mod") else model
-            torch.save(
+            ok = atomic_torch_save(
                 {
                     "E_state_dict": E.state_dict(),
                     "model_state_dict": model_to_save.state_dict(),
@@ -410,4 +423,6 @@ for step in pbar:
                 },
                 checkpoint_path,
             )
+            if ok:
+                best_val_ppl = val_ppl
 tqdm.write(f"saved: {checkpoint_path}")
