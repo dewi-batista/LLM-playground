@@ -1,8 +1,9 @@
 from cache_tokenisation import load_or_create_token_ids
-from pathlib import Path
-from tqdm import tqdm
 from tfs_utils.checkpoint import atomic_json_save, atomic_torch_save
 from tfs_utils.metrics import append_metrics_row, write_val_ppl_svg
+
+from pathlib import Path
+from tqdm import tqdm
 
 import inspect
 import json
