@@ -234,7 +234,7 @@ if not resume:
         block.W_O.weight.data /= resid_scale
         block.W_2.weight.data /= resid_scale
 
-# TODO: check that this is what it's intended to be (weight tying)
+# tie weights (makes U's weights point to the same param object as E's)
 U.weight = E.weight
 
 # with fixed seq_len, positional encoding only needs to be computed once

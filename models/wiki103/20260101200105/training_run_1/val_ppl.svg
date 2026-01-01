@@ -1,11 +1,11 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <svg xmlns="http://www.w3.org/2000/svg" width="900" height="420" viewBox="0 0 900 420">
 <rect x="0" y="0" width="100%" height="100%" fill="white"/>
-<text x="70" y="24" font-family="monospace" font-size="16">val_ppl (last=273.92, best=273.92, step=3_000)</text>
+<text x="70" y="24" font-family="monospace" font-size="16">val_ppl (last=483.23, best=483.23, step=2_000)</text>
 <line x1="70" y1="40" x2="70" y2="365" stroke="#333" stroke-width="1"/>
 <line x1="70" y1="365" x2="880" y2="365" stroke="#333" stroke-width="1"/>
-<polyline fill="none" stroke="#1f77b4" stroke-width="2" points="70.0,54.8 143.6,206.5 217.3,262.7 290.9,278.3 364.5,306.1 438.2,321.2 511.8,326.9 585.5,333.1 659.1,339.9 732.7,343.1 806.4,345.0 880.0,350.2"/>
-<polyline fill="none" stroke="#ff7f0e" stroke-width="2" points="70.0,54.8 143.6,206.5 217.3,262.7 290.9,278.3 364.5,306.1 438.2,321.2 511.8,326.9 585.5,333.1 659.1,339.9 732.7,343.1 806.4,345.0 880.0,350.2"/>
-<text x="70" y="402" font-family="monospace" font-size="12" fill="#555">steps: 250 → 3_000</text>
-<text x="70" y="416" font-family="monospace" font-size="12" fill="#555">ppl: 135.53 → 3180.18 (orange=best-so-far)</text>
+<polyline fill="none" stroke="#1f77b4" stroke-width="2" points="70.0,54.8 340.0,215.7 610.0,318.1 880.0,350.2"/>
+<polyline fill="none" stroke="#ff7f0e" stroke-width="2" points="70.0,54.8 340.0,215.7 610.0,318.1 880.0,350.2"/>
+<text x="70" y="402" font-family="monospace" font-size="12" fill="#555">steps: 500 → 2_000</text>
+<text x="70" y="416" font-family="monospace" font-size="12" fill="#555">ppl: 417.87 → 1855.75 (orange=best-so-far)</text>
 </svg>
