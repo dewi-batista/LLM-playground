@@ -1,5 +1,6 @@
 import json
 import os
+import shutil
 from pathlib import Path
 
 import torch
@@ -37,3 +38,60 @@ def atomic_json_save(obj: dict, path: Path) -> bool:
             pass
         return False
 
+
+def atomic_torch_save_last_and_best(
+    obj,
+    *,
+    last_path: Path,
+    best_path: Path,
+    save_best: bool,
+) -> tuple[bool, bool]:
+    save_tmp = last_path.with_suffix(last_path.suffix + ".save_tmp")
+    link_tmp = last_path.with_suffix(last_path.suffix + ".link_tmp")
+    try:
+        torch.save(obj, save_tmp)
+    except Exception as e:
+        tqdm.write(f"WARNING: checkpoint save failed: {e}")
+        try:
+            save_tmp.unlink(missing_ok=True)
+        except Exception:
+            pass
+        return False, False
+
+    saved_last = False
+    saved_best = False
+    try:
+        if save_best:
+            os.replace(save_tmp, best_path)
+            saved_best = True
+
+            try:
+                link_tmp.unlink(missing_ok=True)
+            except Exception:
+                pass
+            try:
+                os.link(best_path, link_tmp)
+            except Exception:
+                try:
+                    shutil.copyfile(best_path, link_tmp)
+                except Exception as e:
+                    tqdm.write(f"WARNING: last checkpoint link/copy failed: {e}")
+                    return False, True
+            os.replace(link_tmp, last_path)
+            saved_last = True
+        else:
+            os.replace(save_tmp, last_path)
+            saved_last = True
+    except Exception as e:
+        tqdm.write(f"WARNING: checkpoint finalize failed: {e}")
+        try:
+            save_tmp.unlink(missing_ok=True)
+        except Exception:
+            pass
+        try:
+            link_tmp.unlink(missing_ok=True)
+        except Exception:
+            pass
+        return False, saved_best
+
+    return saved_last, saved_best

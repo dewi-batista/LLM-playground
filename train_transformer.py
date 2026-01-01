@@ -1,6 +1,8 @@
 from cache_tokenisation import load_or_create_token_ids
-from tfs_utils.checkpoint import atomic_json_save, atomic_torch_save
+from tfs_utils.checkpoint import atomic_json_save, atomic_torch_save_last_and_best
 from tfs_utils.metrics import append_metrics_row, write_val_ppl_svg
+from tfs_utils.run_info import run_header
+from tfs_utils.transformer_ckpt import build_transformer_ckpt
 
 from pathlib import Path
 from tqdm import tqdm
@@ -135,11 +137,13 @@ training_run_dir = run_dir / f"training_run_{model_number}"
 training_run_dir.mkdir(parents=True, exist_ok=True)
 
 checkpoint_path = training_run_dir / "weights.ckpt"
+last_checkpoint_path = training_run_dir / "last.ckpt"
 meta_path = training_run_dir / "meta.json"
 metrics_path = training_run_dir / "metrics.csv"
 val_ppl_plot_path = training_run_dir / "val_ppl.svg"
 tqdm.write(f"\ntraining_run_dir: {os.path.relpath(training_run_dir, HERE)} (resume: {resume})")
 corpus_len = len(indeces_corpus_to_token)
+run_meta = run_header(HERE)
 
 tokens_per_step = batch_size * seq_len * grad_accum_steps
 total_steps = int(math.ceil(train_tokens / tokens_per_step))
@@ -256,8 +260,9 @@ optimizer = torch.optim.AdamW(
 start_step = 0
 best_val_ppl = float("inf")
 if resume:
-    assert checkpoint_path.exists()
-    ckpt = torch.load(checkpoint_path, map_location=device, weights_only=False)
+    resume_path = last_checkpoint_path if last_checkpoint_path.exists() else checkpoint_path
+    assert resume_path.exists()
+    ckpt = torch.load(resume_path, map_location=device, weights_only=False)
     E.load_state_dict(ckpt["E_state_dict"])
     model_state_dict = ckpt["model_state_dict"]
     if len(model_state_dict) > 0 and next(iter(model_state_dict.keys())).startswith("_orig_mod."):
@@ -274,7 +279,7 @@ if resume:
     torch.set_rng_state(ckpt["rng_state_torch"].cpu())
     if torch.cuda.is_available() and ckpt["rng_state_cuda"] is not None:
         torch.cuda.set_rng_state_all([s.cpu() for s in ckpt["rng_state_cuda"]])
-    tqdm.write(f"\nresuming from: {os.path.relpath(checkpoint_path, HERE)}\n(start step: {start_step:_})")
+    tqdm.write(f"\nresuming from: {os.path.relpath(resume_path, HERE)}\n(start step: {start_step:_})")
 
 compile_enabled = (device.type == "cuda" and hasattr(torch, "compile"))
 tqdm.write(f"\nadamw_fused: {'on' if fused_adamw else 'off'}")
@@ -322,6 +327,11 @@ log_loss = 0.0
 log_time = 0.0
 log_steps = 0
 last_recent_loss = None
+last_step_ms = None
+last_tok_s_M = None
+last_vram_gb = None
+if torch.cuda.is_available():
+    torch.cuda.reset_peak_memory_stats()
 for step in pbar:
     step_t0 = time.perf_counter()
     if step < warmup_steps:
@@ -361,10 +371,15 @@ for step in pbar:
         last_recent_loss = log_loss / log_steps
         step_s = log_time / log_steps
         tok_s = tokens_per_step / step_s
+        last_step_ms = 1000.0 * step_s
+        last_tok_s_M = tok_s / 1e6
+        last_vram_gb = (torch.cuda.max_memory_allocated() / (1024**3)) if torch.cuda.is_available() else None
         pbar.set_postfix(
             recent_loss=f"{last_recent_loss:.4f}",
             lr=f"{current_lr:.2e}",
-            tok_s=f"{tok_s / 1e6:.3f}M",
+            tok_s=f"{last_tok_s_M:.3f}M",
+            step_ms=f"{last_step_ms:.1f}",
+            vram=f"{last_vram_gb:.1f}G" if last_vram_gb is not None else "",
         )
         log_time = 0.0
         log_loss = 0.0
@@ -374,90 +389,94 @@ for step in pbar:
     if (step + 1) % eval_every == 0 or (step + 1) == total_steps:
         val_ppl = val_perplexity()
         pbar.set_postfix(val_ppl=f"{val_ppl:.2f}")
-        saved = False
-        if val_ppl < best_val_ppl:
-            prev_best_val_ppl = best_val_ppl
-            model_to_save = model._orig_mod if hasattr(model, "_orig_mod") else model
-            ok = atomic_torch_save(
-                {
-                    "E_state_dict": E.state_dict(),
-                    "model_state_dict": model_to_save.state_dict(),
-                    "final_lay_norm_state_dict": final_lay_norm.state_dict(),
-                    "U_state_dict": U.state_dict(),
-                    "optimizer_state_dict": optimizer.state_dict(),
-                    "vocab_size": V,
-                    "min_count": min_count,
-                    "index_to_token": index_to_token,
-                    "d_model": d_model,
-                    "num_heads": num_heads,
-                    "num_blocks": num_blocks,
-                    "d_ff": d_ff,
-                    "seq_len": seq_len,
-                    "batch_size": batch_size,
-                    "dropout": dropout,
-                    "lr": lr,
-                    "weight_decay": weight_decay,
-                    "grad_clip": grad_clip,
-                    "warmup_frac": warmup_frac,
-                    "warmup_steps": warmup_steps,
-                    "total_steps": total_steps,
-                    "grad_accum_steps": grad_accum_steps,
-                    "train_tokens": train_tokens,
-                    "tokens_per_step": tokens_per_step,
-                    "val_frac": val_frac,
-                    "eval_every": eval_every,
-                    "eval_batches": eval_batches,
-                    "best_val_ppl": val_ppl,
-                    "val_ppl": val_ppl,
-                    "bpe_vocab_path": str(vocab_path.relative_to(HERE)),
-                    "bpe_encodings_path": str(encodings_path.relative_to(HERE)),
-                    "global_step": step + 1,
-                    "rng_state_py": random.getstate(),
-                    "rng_state_np": np.random.get_state(),
-                    "rng_state_torch": torch.get_rng_state(),
-                    "rng_state_cuda": torch.cuda.get_rng_state_all() if torch.cuda.is_available() else None,
-                },
-                checkpoint_path,
-            )
-            if ok:
-                best_val_ppl = val_ppl
-                saved = True
-                atomic_json_save(
-                    {
-                        "language": language,
-                        "timestamp": timestamp,
-                        "model_number": model_number,
-                        "global_step": step + 1,
-                        "val_ppl": val_ppl,
-                        "best_val_ppl": val_ppl,
-                        "prev_best_val_ppl": prev_best_val_ppl,
-                        "train_tokens": int(train_tokens),
-                        "seen_tokens": int((step + 1) * tokens_per_step),
-                        "tokens_per_step": tokens_per_step,
-                        "total_steps": total_steps,
-                        "warmup_steps": warmup_steps,
-                        "d_model": d_model,
-                        "num_heads": num_heads,
-                        "num_blocks": num_blocks,
-                        "d_ff": d_ff,
-                        "seq_len": seq_len,
-                        "batch_size": batch_size,
-                        "dropout": dropout,
-                        "lr": lr,
-                        "weight_decay": weight_decay,
-                        "grad_clip": grad_clip,
-                        "grad_accum_steps": grad_accum_steps,
-                        "val_frac": val_frac,
-                        "eval_every": eval_every,
-                        "eval_batches": eval_batches,
-                        "vocabulary_path": str(vocab_path.relative_to(HERE)),
-                        "merges_path": str(encodings_path.relative_to(HERE)),
-                        "token_ids_path": str(token_ids_path.relative_to(HERE)),
-                        "checkpoint_path": str(checkpoint_path.relative_to(HERE)),
-                    },
-                    meta_path,
-                )
-                tqdm.write(f"saved: {checkpoint_path} (step={step + 1}, val_ppl={val_ppl:.2f})")
+        is_best = val_ppl < best_val_ppl
+        prev_best_val_ppl = best_val_ppl
+        new_best_val_ppl = val_ppl if is_best else best_val_ppl
+
+        model_to_save = model._orig_mod if hasattr(model, "_orig_mod") else model
+        ckpt_obj = build_transformer_ckpt(
+            repo_root=HERE,
+            E=E,
+            model=model_to_save,
+            final_lay_norm=final_lay_norm,
+            U=U,
+            optimizer=optimizer,
+            vocab_size=V,
+            min_count=min_count,
+            index_to_token=index_to_token,
+            d_model=d_model,
+            num_heads=num_heads,
+            num_blocks=num_blocks,
+            d_ff=d_ff,
+            seq_len=seq_len,
+            batch_size=batch_size,
+            dropout=dropout,
+            lr=lr,
+            weight_decay=weight_decay,
+            grad_clip=grad_clip,
+            warmup_frac=warmup_frac,
+            warmup_steps=warmup_steps,
+            total_steps=total_steps,
+            grad_accum_steps=grad_accum_steps,
+            train_tokens=train_tokens,
+            tokens_per_step=tokens_per_step,
+            val_frac=val_frac,
+            eval_every=eval_every,
+            eval_batches=eval_batches,
+            val_ppl=val_ppl,
+            best_val_ppl=new_best_val_ppl,
+            vocab_path=vocab_path,
+            encodings_path=encodings_path,
+            token_ids_path=token_ids_path,
+            global_step=step + 1,
+        )
+
+        saved_last, saved_best = atomic_torch_save_last_and_best(
+            ckpt_obj,
+            last_path=last_checkpoint_path,
+            best_path=checkpoint_path,
+            save_best=is_best,
+        )
+        if saved_last:
+            tqdm.write(f"saved: {last_checkpoint_path} (step={step + 1}, val_ppl={val_ppl:.2f})")
+        if saved_best:
+            best_val_ppl = val_ppl
+            meta = {
+                "language": language,
+                "timestamp": timestamp,
+                "model_number": model_number,
+                "global_step": step + 1,
+                "val_ppl": val_ppl,
+                "best_val_ppl": val_ppl,
+                "prev_best_val_ppl": prev_best_val_ppl,
+                "train_tokens": int(train_tokens),
+                "seen_tokens": int((step + 1) * tokens_per_step),
+                "tokens_per_step": tokens_per_step,
+                "total_steps": total_steps,
+                "warmup_steps": warmup_steps,
+                "d_model": d_model,
+                "num_heads": num_heads,
+                "num_blocks": num_blocks,
+                "d_ff": d_ff,
+                "seq_len": seq_len,
+                "batch_size": batch_size,
+                "dropout": dropout,
+                "lr": lr,
+                "weight_decay": weight_decay,
+                "grad_clip": grad_clip,
+                "grad_accum_steps": grad_accum_steps,
+                "val_frac": val_frac,
+                "eval_every": eval_every,
+                "eval_batches": eval_batches,
+                "vocabulary_path": str(vocab_path.relative_to(HERE)),
+                "merges_path": str(encodings_path.relative_to(HERE)),
+                "token_ids_path": str(token_ids_path.relative_to(HERE)),
+                "checkpoint_path": str(checkpoint_path.relative_to(HERE)),
+                "last_checkpoint_path": str(last_checkpoint_path.relative_to(HERE)),
+                **run_meta,
+            }
+            atomic_json_save(meta, meta_path)
+            tqdm.write(f"saved: {checkpoint_path} (step={step + 1}, val_ppl={val_ppl:.2f})")
         append_metrics_row(
             metrics_path,
             {
@@ -465,9 +484,13 @@ for step in pbar:
                 "seen_tokens": int((step + 1) * tokens_per_step),
                 "lr": current_lr,
                 "recent_loss": "" if last_recent_loss is None else last_recent_loss,
+                "step_ms": "" if last_step_ms is None else last_step_ms,
+                "tok_s_M": "" if last_tok_s_M is None else last_tok_s_M,
+                "vram_gb": "" if last_vram_gb is None else last_vram_gb,
                 "val_ppl": val_ppl,
                 "best_val_ppl": best_val_ppl,
-                "saved": int(saved),
+                "saved_best": int(saved_best),
+                "saved_last": int(saved_last),
             },
         )
         write_val_ppl_svg(metrics_path, val_ppl_plot_path)
