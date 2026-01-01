@@ -116,21 +116,19 @@ class TransformerBlock(nn.Module):
 
     def forward(self, X):
         B, T, _ = X.shape
-        Q, K, V = self.W_QKV(X).chunk(3, dim=-1)
+        H = self.ln1(X)
+        Q, K, V = self.W_QKV(H).chunk(3, dim=-1)
         Q = Q.reshape(B, T, self.num_heads, self.d_head).transpose(1, 2)
         K = K.reshape(B, T, self.num_heads, self.d_head).transpose(1, 2)
         V = V.reshape(B, T, self.num_heads, self.d_head).transpose(1, 2)
 
-        M = torch.triu(X.new_full((T, T), float("-inf")), diagonal=1)
-        A = torch.softmax((Q @ K.transpose(-2, -1)) / (self.d_head**0.5) + M, dim=-1)
-        O = A @ V
+        O = F.scaled_dot_product_attention(Q, K, V, is_causal=True)
         O = O.transpose(1, 2).reshape(B, T, self.num_heads * self.d_head)
-        O = self.dropout_attn(self.W_O(O))
-        H_1 = self.ln1(X + O)
+        X = X + self.dropout_attn(self.W_O(O))
 
-        H_2 = self.dropout_ffn(self.W_2(self.act(self.W_1(H_1))))
-        H_3 = self.ln2(H_1 + H_2)
-        return H_3
+        H = self.ln2(X)
+        X = X + self.dropout_ffn(self.W_2(self.act(self.W_1(H))))
+        return X
 
 
 def token_to_cli(token: str) -> str:
