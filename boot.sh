@@ -13,3 +13,7 @@ source .venv/bin/activate
 # make pip, requirements.txt and repo are up-to-date
 pip install --upgrade pip
 git yem
+
+# tmux new -s train
+# watch -n 2.5 'df -h .; echo; df -ih .'
+# watch -n 2.5 nvidia-smi
