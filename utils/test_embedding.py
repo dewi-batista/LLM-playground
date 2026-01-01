@@ -13,8 +13,7 @@ import sys
 import torch
 import torch.nn.functional as F
 
-HERE = Path(__file__).resolve().parent
-
+HERE = Path(__file__).resolve().parents[1]
 MODELS_DIR = HERE / "models"
 
 WHICH = "E"  # "E", "U", or "sum"
@@ -208,7 +207,7 @@ if not model_number.isdigit():
     print(f"usage: python {Path(__file__).name} <language> <vocab_timestamp> <model_number> [word]")
     raise SystemExit(1)
 run_dir = MODELS_DIR / language / timestamp
-checkpoint_path = run_dir / f"{language}_{timestamp}_{model_number}.ckpt"
+checkpoint_path = run_dir / "embedding" / f"training_run_{model_number}" / "weights.ckpt"
 query_words = sys.argv[4:]
 
 query_words = [cli_to_token(w) if w not in {"+", "-"} else w for w in query_words]

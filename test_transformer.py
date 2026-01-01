@@ -217,7 +217,7 @@ def main():
     device = torch.device("cuda") if torch.cuda.is_available() else torch.device("cpu")
 
     run_dir = MODELS_DIR / language / timestamp
-    checkpoint_path = run_dir / f"{language}_transformer_{timestamp}_{model_number}.ckpt"
+    checkpoint_path = run_dir / "transformer" / f"training_run_{model_number}" / "weights.ckpt"
     if not checkpoint_path.exists():
         print(f"checkpoint not found: {checkpoint_path}")
         raise SystemExit(1)
@@ -252,10 +252,10 @@ def main():
     if best_val_ppl is not None:
         tqdm.write(f"best  : ppl={float(best_val_ppl):.2f} (nll={math.log(float(best_val_ppl)):.4f})")
 
-    vocab_path = Path(ckpt.get("bpe_vocab_path", run_dir / f"{language}_{timestamp}.json"))
+    vocab_path = Path(ckpt.get("bpe_vocab_path", run_dir / "vocabulary.json"))
     if not vocab_path.is_absolute():
         vocab_path = HERE / vocab_path
-    encodings_path = Path(ckpt.get("bpe_encodings_path", run_dir / f"{language}_{timestamp}.pkl"))
+    encodings_path = Path(ckpt.get("bpe_encodings_path", run_dir / "merges.pkl"))
     if not encodings_path.is_absolute():
         encodings_path = HERE / encodings_path
 

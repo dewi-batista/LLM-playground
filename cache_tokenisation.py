@@ -26,18 +26,18 @@ def load_or_create_token_ids(language, timestamp, corpus_path=None, token_ids_pa
     run_dir.mkdir(parents=True, exist_ok=True)
 
     corpus_path = corpus_path or (HERE / "data" / f"{language}.txt")
-    token_ids_path = token_ids_path or (run_dir / f"{language}_{timestamp}.npy")
+    token_ids_path = token_ids_path or (run_dir / "token_ids.npy")
 
     if token_ids_path.exists():
         return np.load(token_ids_path, mmap_mode="r")
 
     if encodings is None:
-        encodings_path = run_dir / f"{language}_{timestamp}.pkl"
+        encodings_path = run_dir / "merges.pkl"
         with open(encodings_path, "rb") as f:
             encodings = pickle.load(f)
 
     if vocab is None:
-        vocab_path = run_dir / f"{language}_{timestamp}.json"
+        vocab_path = run_dir / "vocabulary.json"
         with open(vocab_path) as f:
             vocab = json.load(f)
 
@@ -98,4 +98,4 @@ if __name__ == "__main__":
     language = sys.argv[1]
     timestamp = sys.argv[2]
     token_ids = load_or_create_token_ids(language, timestamp)
-    print(f"saved: models/{language}/{timestamp}/{language}_{timestamp}.npy (len={len(token_ids)})")
+    print(f"saved: models/{language}/{timestamp}/token_ids.npy (len={len(token_ids)})")

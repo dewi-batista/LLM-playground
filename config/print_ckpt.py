@@ -16,7 +16,7 @@ timestamp = sys.argv[2]
 model_number = sys.argv[3]
 
 run_dir = MODELS_DIR / language / timestamp
-ckpt_path = run_dir / f"{language}_transformer_{timestamp}_{model_number}.ckpt"
+ckpt_path = run_dir / "transformer" / f"training_run_{model_number}" / "weights.ckpt"
 ckpt = torch.load(ckpt_path, map_location="cpu", weights_only=False)
 
 DROP = {

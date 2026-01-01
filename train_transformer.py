@@ -44,9 +44,9 @@ run_dir.mkdir(parents=True, exist_ok=True)
 
 config_path = HERE / "config" / "config.yaml"
 corpus_path = HERE / "data" / f"{language}.txt"
-encodings_path = run_dir / f"{language}_{timestamp}.pkl"
-token_ids_path = run_dir / f"{language}_{timestamp}.npy"
-vocab_path = run_dir / f"{language}_{timestamp}.json"
+vocab_path = run_dir / "vocabulary.json"
+encodings_path = run_dir / "merges.pkl"
+token_ids_path = run_dir / "token_ids.npy"
 
 with open(config_path, "r") as f:
     config = yaml.safe_load(f)
@@ -124,14 +124,21 @@ indeces_corpus_to_token = indeces_corpus_to_token[indeces_corpus_to_token >= 0]
 tqdm.write(f"END: built indeces_corpus_to_token in {time.perf_counter() - t0:.1f}s (length: {len(indeces_corpus_to_token):_})")
 
 # new ckpt if model number not passed as argument
+transformer_dir = run_dir / "transformer"
+transformer_dir.mkdir(parents=True, exist_ok=True)
+
 if model_number is None:
-    model_number = len(list(run_dir.glob(f"{language}_transformer_{timestamp}_*.ckpt"))) + 1
-    checkpoint_path = run_dir / f"{language}_transformer_{timestamp}_{model_number}.ckpt"
+    model_number = len([p for p in transformer_dir.glob("training_run_*") if p.is_dir()]) + 1
     resume = False
 else:
-    checkpoint_path = run_dir / f"{language}_transformer_{timestamp}_{model_number}.ckpt"
     resume = True
-tqdm.write(f"\ncheckpoint_path: {os.path.relpath(checkpoint_path, HERE)} (resume: {resume})")
+
+training_run_dir = transformer_dir / f"training_run_{model_number}"
+training_run_dir.mkdir(parents=True, exist_ok=True)
+
+checkpoint_path = training_run_dir / "weights.ckpt"
+meta_path = training_run_dir / "meta.json"
+tqdm.write(f"\ntraining_run_dir: {os.path.relpath(training_run_dir, HERE)} (resume: {resume})")
 corpus_len = len(indeces_corpus_to_token)
 
 tokens_per_step = batch_size * seq_len * grad_accum_steps
@@ -324,6 +331,22 @@ def atomic_torch_save(obj: dict, path: Path) -> bool:
             pass
         return False
 
+def atomic_json_save(obj: dict, path: Path) -> bool:
+    tmp_path = path.with_suffix(path.suffix + ".tmp")
+    try:
+        with open(tmp_path, "w") as f:
+            json.dump(obj, f, indent=2)
+            f.write("\n")
+        os.replace(tmp_path, path)
+        return True
+    except Exception as e:
+        tqdm.write(f"WARNING: meta save failed: {e}")
+        try:
+            tmp_path.unlink(missing_ok=True)
+        except Exception:
+            pass
+        return False
+
 pbar = tqdm(range(start_step, total_steps), desc="Train", unit=" batch", total=total_steps, initial=start_step)
 log_loss = 0.0
 log_time = 0.0
@@ -380,6 +403,7 @@ for step in pbar:
         val_ppl = val_perplexity()
         pbar.set_postfix(val_ppl=f"{val_ppl:.2f}")
         if val_ppl < best_val_ppl:
+            prev_best_val_ppl = best_val_ppl
             model_to_save = model._orig_mod if hasattr(model, "_orig_mod") else model
             ok = atomic_torch_save(
                 {
@@ -410,7 +434,7 @@ for step in pbar:
                     "val_frac": val_frac,
                     "eval_every": eval_every,
                     "eval_batches": eval_batches,
-                    "best_val_ppl": best_val_ppl,
+                    "best_val_ppl": val_ppl,
                     "val_ppl": val_ppl,
                     "bpe_vocab_path": str(vocab_path.relative_to(HERE)),
                     "bpe_encodings_path": str(encodings_path.relative_to(HERE)),
@@ -424,5 +448,40 @@ for step in pbar:
             )
             if ok:
                 best_val_ppl = val_ppl
+                atomic_json_save(
+                    {
+                        "language": language,
+                        "timestamp": timestamp,
+                        "model_number": model_number,
+                        "global_step": step + 1,
+                        "val_ppl": val_ppl,
+                        "best_val_ppl": val_ppl,
+                        "prev_best_val_ppl": prev_best_val_ppl,
+                        "train_tokens": int(train_tokens),
+                        "seen_tokens": int((step + 1) * tokens_per_step),
+                        "tokens_per_step": tokens_per_step,
+                        "total_steps": total_steps,
+                        "warmup_steps": warmup_steps,
+                        "d_model": d_model,
+                        "num_heads": num_heads,
+                        "num_blocks": num_blocks,
+                        "d_ff": d_ff,
+                        "seq_len": seq_len,
+                        "batch_size": batch_size,
+                        "dropout": dropout,
+                        "lr": lr,
+                        "weight_decay": weight_decay,
+                        "grad_clip": grad_clip,
+                        "grad_accum_steps": grad_accum_steps,
+                        "val_frac": val_frac,
+                        "eval_every": eval_every,
+                        "eval_batches": eval_batches,
+                        "vocabulary_path": str(vocab_path.relative_to(HERE)),
+                        "merges_path": str(encodings_path.relative_to(HERE)),
+                        "token_ids_path": str(token_ids_path.relative_to(HERE)),
+                        "checkpoint_path": str(checkpoint_path.relative_to(HERE)),
+                    },
+                    meta_path,
+                )
                 tqdm.write(f"saved: {checkpoint_path} (step={step + 1}, val_ppl={val_ppl:.2f})")
-tqdm.write(f"saved: {checkpoint_path}")
+tqdm.write("done")

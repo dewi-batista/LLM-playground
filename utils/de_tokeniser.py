@@ -4,7 +4,7 @@ from train_tokeniser import tokenise
 import pickle
 import sys
 
-HERE = Path(__file__).resolve().parent
+HERE = Path(__file__).resolve().parents[1]
 
 if len(sys.argv) < 4 or sys.argv[1] in {"-h", "--help"}:
     print(f"usage: python {Path(__file__).name} <language> <timestamp> <text...>")
@@ -12,7 +12,7 @@ if len(sys.argv) < 4 or sys.argv[1] in {"-h", "--help"}:
 
 language = sys.argv[1]
 timestamp = sys.argv[2]
-encodings_path = HERE / "models" / language / timestamp / f"{language}_{timestamp}.pkl"
+encodings_path = HERE / "models" / language / timestamp / "merges.pkl"
 
 with open(encodings_path, "rb") as f:
     encodings = pickle.load(f)

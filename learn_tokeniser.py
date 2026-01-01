@@ -188,8 +188,8 @@ def learn_encodings(corpus, language):
         }
         for token_id in range(vocab_size)
     }
-    vocab_path = run_dir / f"{language}_{run_timestamp}.json"
-    encodings_path = run_dir / f"{language}_{run_timestamp}.pkl"
+    vocab_path = run_dir / "vocabulary.json"
+    encodings_path = run_dir / "merges.pkl"
 
     index_width = len(str(vocab_size - 1))
     count_width = len(str(max(token_id_counts)))

@@ -29,15 +29,15 @@ model_number = int(sys.argv[3]) if (len(sys.argv) > 3) else None
 device = torch.device("cuda") if torch.cuda.is_available() else torch.device("cpu")
 
 # directory shenanigans
-HERE = Path(__file__).resolve().parent
+HERE = Path(__file__).resolve().parents[1]
 
 run_dir = HERE / "models" / language / timestamp
 run_dir.mkdir(parents=True, exist_ok=True)
 
 corpus_path = HERE / "data" / f"{language}.txt"
-encodings_path = run_dir / f"{language}_{timestamp}.pkl"
-token_ids_path = run_dir / f"{language}_{timestamp}.npy"
-vocab_path = run_dir / f"{language}_{timestamp}.json"
+encodings_path = run_dir / "merges.pkl"
+token_ids_path = run_dir / "token_ids.npy"
+vocab_path = run_dir / "vocabulary.json"
 
 with open(HERE / "./config/config.yaml", "r") as f:
     config = yaml.safe_load(f)
@@ -118,13 +118,19 @@ def neg_sampling_loss(u, v, U, context_idx):
     return torch.mean(loss)
 
 # new ckpt if model number not passed as argument
+embedding_dir = run_dir / "embedding"
+embedding_dir.mkdir(parents=True, exist_ok=True)
+
 if model_number is None:
-    model_number = len(list(run_dir.glob(f"{language}_{timestamp}_*.ckpt"))) + 1
-    checkpoint_path = run_dir / f"{language}_{timestamp}_{model_number}.ckpt"
+    model_number = len([p for p in embedding_dir.glob("training_run_*") if p.is_dir()]) + 1
     resume = False
 else:
-    checkpoint_path = run_dir / f"{language}_{timestamp}_{model_number}.ckpt"
     resume = True
+
+training_run_dir = embedding_dir / f"training_run_{model_number}"
+training_run_dir.mkdir(parents=True, exist_ok=True)
+checkpoint_path = training_run_dir / "weights.ckpt"
+meta_path = training_run_dir / "meta.json"
 
 seed_base = int(timestamp) if timestamp.isdigit() and len(timestamp) == 14 else 0
 subsample_seed = (seed_base + int(model_number)) % (2**32 - 1)
@@ -216,5 +222,30 @@ for epoch in range(start_epoch, epochs):
         },
         checkpoint_path,
     )
+    with open(meta_path, "w") as f:
+        json.dump(
+            {
+                "language": language,
+                "timestamp": timestamp,
+                "model_number": model_number,
+                "epoch": epoch + 1,
+                "epochs": epochs,
+                "batch_size": batch_size,
+                "d_model": d,
+                "k": k,
+                "lr": lr,
+                "min_count": min_count,
+                "steps_per_epoch": steps_per_epoch,
+                "subsample_t": subsample_t,
+                "window": window,
+                "vocabulary_path": str(vocab_path.relative_to(HERE)),
+                "merges_path": str(encodings_path.relative_to(HERE)),
+                "token_ids_path": str(token_ids_path.relative_to(HERE)),
+                "checkpoint_path": str(checkpoint_path.relative_to(HERE)),
+            },
+            f,
+            indent=2,
+        )
+        f.write("\n")
 # keep this here do not indent!!!
 tqdm.write(f"saved: {checkpoint_path}")
