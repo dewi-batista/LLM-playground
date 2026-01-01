@@ -2,10 +2,8 @@
 
 *.ckpt
 *.npy
+*.sh
+*.txt
 
 __pycache__/
 .venv/
-
-,source.sh
-openwebtext.txt
-wiki103.txt
