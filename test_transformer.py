@@ -387,20 +387,20 @@ def main():
         target_logit = logits[int(target_idx)]
         rank = int((logits > target_logit).sum().item()) + 1
         target_prob = float(torch.exp(target_logit - torch.logsumexp(logits, dim=-1)).item())
-        target_ppl = float(torch.exp(torch.logsumexp(logits, dim=-1) - target_logit).item())
+        # target_ppl = float(torch.exp(torch.logsumexp(logits, dim=-1) - target_logit).item())
 
-        print(f"Context: {context_text} [{token_to_cli(target_token)}, {rank}, {target_ppl:.2f}]")
+        print(f"Context: {context_text} [{token_to_cli(target_token)}, {rank}]")
         if target_pieces is not None and len(target_pieces) > 1:
             pieces_cli = [token_to_cli(index_to_token[int(i)]) for i in target_pieces]
             print(f"Target tokens: {pieces_cli}")
-        print("Top 10:", top10)
+        # print("Top 10:", top10)
 
     if bench:
         if gen_n > 0:
             print("ERROR: --bench and --gen are mutually exclusive")
             raise SystemExit(1)
         for i, s in enumerate(BENCH_SENTENCES):
-            print(f"\n=== {i + 1}/{len(BENCH_SENTENCES)} ===")
+            # print(f"\n=== {i + 1}/{len(BENCH_SENTENCES)} ===")
             eval_holdout(s)
         raise SystemExit(0)
 
