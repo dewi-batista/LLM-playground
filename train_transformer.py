@@ -1,20 +1,3 @@
-# TODO: change name structure, e.g. ./models/wiki103/20251231183907/vocab.json
-# current naming is too much for the eyes to scan
-# TODO: make a directory for each model (each ckpt) and save training info inside
-
-# TODO: read about warmup + cosine LR schedules
-# TODO: read about gradient accumulation (multiple forward/backward passes before stepping)
-# TODO: read about gradient clipping (stabilises training)
-# TODO: read about warmup + cosine LR schedules
-# TODO: read about AdamW + weight decay (and why you often exclude biases/norms)
-# TODO: read about why head dim is often ~64 (so n_heads ≈ d_model/64)
-# TODO: read about splitting params into decay/no-decay groups (biases + norms usually no decay)
-# TODO: read about AdamW defaults (betas/eps) used for transformers
-# TODO: read about TF32 and why it can be a big speedup on Ampere+ GPUs
-# TODO: read about fused AdamW
-# TODO: read about PyTorch SDPA / FlashAttention kernels
-# TODO: read about torch.compile (and why it can speed up steady-state training)
-
 from cache_tokenisation import load_or_create_token_ids
 from pathlib import Path
 from tqdm import tqdm
@@ -93,25 +76,24 @@ tqdm.write(f"\nnum mergers (encodings): {len(encodings):_}")
 tqdm.write(f"num tokens in vocab: {vocab_size:_}")
 
 # hyperparams
-schema = {
-    "batch_size": int,
-    "d_model": int,
-    "dropout": float,
-    "eval_batches": int,
-    "eval_every": int,
-    "grad_accum_steps": int,
-    "grad_clip": float,
-    "log_every": int,
-    "lr": float,
-    "min_count": int,
-    "num_blocks": int,
-    "seq_len": int,
-    "train_tokens": float,
-    "val_frac": float,
-    "warmup_frac": float,
-    "weight_decay": float,
-}
-locals().update({k: fn(config["transformer"][k]) for k, fn in schema.items()})
+cfg = config["transformer"]
+
+batch_size        = int(cfg["batch_size"])
+d_model           = int(cfg["d_model"])
+dropout           = float(cfg["dropout"])
+eval_batches      = int(cfg["eval_batches"])
+eval_every        = int(cfg["eval_every"])
+grad_accum_steps  = int(cfg["grad_accum_steps"])
+grad_clip         = float(cfg["grad_clip"])
+log_every         = int(cfg["log_every"])
+lr                = float(cfg["lr"])
+min_count         = int(cfg["min_count"])
+num_blocks        = int(cfg["num_blocks"])
+seq_len           = int(cfg["seq_len"])
+train_tokens      = float(cfg["train_tokens"])
+val_frac          = float(cfg["val_frac"])
+warmup_frac       = float(cfg["warmup_frac"])
+weight_decay      = float(cfg["weight_decay"])
 
 # dependent hyperparams
 num_heads = d_model // 64 # so d_head = d_model / num_heads = 64
