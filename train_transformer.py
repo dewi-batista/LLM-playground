@@ -182,7 +182,6 @@ class TransformerBlock(nn.Module):
 
     def forward(self, X):
         B, T, _ = X.shape
-        # TODO: read about pre-LN vs post-LN transformers (GPT-2 is pre-LN)
         H = self.ln1(X)
         Q, K, V = self.W_QKV(H).chunk(3, dim=-1)
         Q = Q.reshape(B, T, self.num_heads, self.d_head).transpose(1, 2)
@@ -203,7 +202,6 @@ final_lay_norm = nn.LayerNorm(d_model).to(device)
 model = nn.Sequential(*[TransformerBlock(d_model, d_ff, num_heads, dropout) for _ in range(num_blocks)]).to(device)
 U = nn.Linear(d_model, V, bias=False).to(device)
 
-# TODO: read about GPT-2 init (std=0.02, plus scaled residual projections)
 if not resume:
     def init_gpt2(m):
         if isinstance(m, nn.Linear):

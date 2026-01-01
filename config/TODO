@@ -14,3 +14,5 @@
 - fused AdamW
 - PyTorch SDPA / FlashAttention kernels
 - torch.compile (and why it can speed up steady-state training)
+- pre-LN vs post-LN transformers (GPT-2 is pre-LN)
+- GPT-2 init (std=0.02, plus scaled residual projections)
