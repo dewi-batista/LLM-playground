@@ -31,13 +31,16 @@ device = torch.device("cuda") if torch.cuda.is_available() else torch.device("cp
 # directory shenanigans
 HERE = Path(__file__).resolve().parents[1]
 
-run_dir = HERE / "models" / language / timestamp
-run_dir.mkdir(parents=True, exist_ok=True)
+tokeniser_dir = HERE / "models" / language / timestamp
+tokeniser_dir.mkdir(parents=True, exist_ok=True)
+
+embedding_models_dir = HERE / "embedding_models" / language / timestamp
+embedding_models_dir.mkdir(parents=True, exist_ok=True)
 
 corpus_path = HERE / "data" / f"{language}.txt"
-encodings_path = run_dir / "merges.pkl"
-token_ids_path = run_dir / "token_ids.npy"
-vocab_path = run_dir / "vocabulary.json"
+encodings_path = tokeniser_dir / "merges.pkl"
+token_ids_path = tokeniser_dir / "token_ids.npy"
+vocab_path = tokeniser_dir / "vocabulary.json"
 
 with open(HERE / "./config/config.yaml", "r") as f:
     config = yaml.safe_load(f)
@@ -118,16 +121,13 @@ def neg_sampling_loss(u, v, U, context_idx):
     return torch.mean(loss)
 
 # new ckpt if model number not passed as argument
-embedding_dir = run_dir / "embedding"
-embedding_dir.mkdir(parents=True, exist_ok=True)
-
 if model_number is None:
-    model_number = len([p for p in embedding_dir.glob("training_run_*") if p.is_dir()]) + 1
+    model_number = len([p for p in embedding_models_dir.glob("training_run_*") if p.is_dir()]) + 1
     resume = False
 else:
     resume = True
 
-training_run_dir = embedding_dir / f"training_run_{model_number}"
+training_run_dir = embedding_models_dir / f"training_run_{model_number}"
 training_run_dir.mkdir(parents=True, exist_ok=True)
 checkpoint_path = training_run_dir / "weights.ckpt"
 meta_path = training_run_dir / "meta.json"

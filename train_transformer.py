@@ -24,9 +24,7 @@ if len(sys.argv) < 3 or sys.argv[1] in {"-h", "--help"}:
 args = sys.argv[1:]
 language = args[0]
 timestamp = args[1]
-
 model_number = int(args[2]) if len(args) > 2 else None
-resume = (model_number is not None)
 
 # device-related
 device = torch.device("cuda") if torch.cuda.is_available() else torch.device("cpu")
@@ -124,16 +122,13 @@ indeces_corpus_to_token = indeces_corpus_to_token[indeces_corpus_to_token >= 0]
 tqdm.write(f"END: built indeces_corpus_to_token in {time.perf_counter() - t0:.1f}s (length: {len(indeces_corpus_to_token):_})")
 
 # new ckpt if model number not passed as argument
-transformer_dir = run_dir / "transformer"
-transformer_dir.mkdir(parents=True, exist_ok=True)
-
 if model_number is None:
-    model_number = len([p for p in transformer_dir.glob("training_run_*") if p.is_dir()]) + 1
+    model_number = len([p for p in run_dir.glob("training_run_*") if p.is_dir()]) + 1
     resume = False
 else:
     resume = True
 
-training_run_dir = transformer_dir / f"training_run_{model_number}"
+training_run_dir = run_dir / f"training_run_{model_number}"
 training_run_dir.mkdir(parents=True, exist_ok=True)
 
 checkpoint_path = training_run_dir / "weights.ckpt"

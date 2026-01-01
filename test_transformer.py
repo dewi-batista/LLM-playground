@@ -217,7 +217,7 @@ def main():
     device = torch.device("cuda") if torch.cuda.is_available() else torch.device("cpu")
 
     run_dir = MODELS_DIR / language / timestamp
-    checkpoint_path = run_dir / "transformer" / f"training_run_{model_number}" / "weights.ckpt"
+    checkpoint_path = run_dir / f"training_run_{model_number}" / "weights.ckpt"
     if not checkpoint_path.exists():
         print(f"checkpoint not found: {checkpoint_path}")
         raise SystemExit(1)
