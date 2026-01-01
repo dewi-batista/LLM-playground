@@ -1,3 +1,7 @@
+# TODO: change name structure, e.g. ./models/wiki103/20251231183907/vocab.json
+# current naming is too much for the eyes to scan
+# TODO: make a directory for each model (each ckpt) and save training info inside
+
 # TODO: read about warmup + cosine LR schedules
 # TODO: read about gradient accumulation (multiple forward/backward passes before stepping)
 # TODO: read about gradient clipping (stabilises training)
@@ -6,6 +10,10 @@
 # TODO: read about why head dim is often ~64 (so n_heads ≈ d_model/64)
 # TODO: read about splitting params into decay/no-decay groups (biases + norms usually no decay)
 # TODO: read about AdamW defaults (betas/eps) used for transformers
+# TODO: read about TF32 and why it can be a big speedup on Ampere+ GPUs
+# TODO: read about fused AdamW
+# TODO: read about PyTorch SDPA / FlashAttention kernels
+# TODO: read about torch.compile (and why it can speed up steady-state training)
 
 from cache_tokenisation import load_or_create_token_ids
 from pathlib import Path
@@ -18,7 +26,6 @@ import numpy as np
 import os
 import pickle
 import random
-import subprocess
 import sys
 import time
 import torch
@@ -36,23 +43,17 @@ language = args[0]
 timestamp = args[1]
 
 model_number = int(args[2]) if len(args) > 2 else None
-resume = model_number is not None
-if len(args) > 3:
-    print(f"ERROR: unknown args: {args[3:]}")
-    raise SystemExit(1)
+resume = (model_number is not None)
 
-# NOTE: I learned recently of an "mps" device which some Apple MacBooks have.
-# Perhaps worth consdering in the future (my current M1 MacBook Air blows).
+# device-related
 device = torch.device("cuda") if torch.cuda.is_available() else torch.device("cpu")
-amp_enabled = device.type == "cuda"
+amp_enabled = (device.type == "cuda")
 amp_dtype = torch.bfloat16
-
 if device.type == "cuda":
-    # TODO: read about TF32 and why it can be a big speedup on Ampere+ GPUs
     torch.backends.cuda.matmul.allow_tf32 = True
     torch.backends.cudnn.allow_tf32 = True
 
-# directory shenanigans
+# directory-related
 HERE = Path(__file__).resolve().parent
 
 run_dir = HERE / "models" / language / timestamp
@@ -64,52 +65,55 @@ encodings_path = run_dir / f"{language}_{timestamp}.pkl"
 token_ids_path = run_dir / f"{language}_{timestamp}.npy"
 vocab_path = run_dir / f"{language}_{timestamp}.json"
 
-# NOTE: The following lines are pre-training sanity checks.
-tqdm.write(f"config_path: {config_path}")
-tqdm.write(f"device: {device} (cuda={torch.cuda.is_available()}, cuda_devices={torch.cuda.device_count()})")
-if torch.cuda.is_available():
-    tqdm.write(f"cuda[0]: {torch.cuda.get_device_name(0)}")
-tqdm.write(f"amp: {'bf16' if amp_enabled else 'off'}")
-tqdm.write(f"tf32: {'on' if (device.type == 'cuda' and torch.backends.cuda.matmul.allow_tf32) else 'off'}")
-tqdm.write(f"run_dir: {run_dir}")
-tqdm.write(f"corpus_path: {corpus_path} (exists={corpus_path.exists()})")
-tqdm.write(f"encodings_path: {encodings_path} (exists={encodings_path.exists()})")
-tqdm.write(f"vocab_path: {vocab_path} (exists={vocab_path.exists()})")
-tqdm.write(f"token_ids_path: {token_ids_path} (exists={token_ids_path.exists()})")
-if token_ids_path.exists():
-    tqdm.write(f"token_ids_path size: {token_ids_path.stat().st_size / (1024**2):.1f} MB")
-
 with open(config_path, "r") as f:
     config = yaml.safe_load(f)
-
 with open(encodings_path, "rb") as f:
     encodings = pickle.load(f)
-
 with open(vocab_path) as f:
     vocab = json.load(f)
 vocab_size = len(vocab)
-tqdm.write(f"loaded encodings: {len(encodings)} merges")
-tqdm.write(f"loaded vocab: {vocab_size} tokens")
 
-# config hyperparams
-batch_size = int(config["transformer"]["batch_size"])
-d_model = int(config["transformer"]["d_model"])
-dropout = float(config["transformer"].get("dropout", 0.1))
-eval_batches = 50
-eval_every = 200
-grad_accum_steps = 1
-grad_clip = 1.0
-log_every = 20
-lr = float(config["transformer"]["lr"])
-min_count = 5
-num_blocks = int(config["transformer"]["num_blocks"])
-seq_len = int(config["transformer"].get("seq_len", 128))
-train_tokens = float(config["transformer"].get("train_tokens", 1e9))
-val_frac = 0.01
-warmup_frac = 0.02
-weight_decay = 0.1
+# pre-training sanity checks
+tqdm.write(f"\n\navailable: {device} (cuda={torch.cuda.is_available()}, cuda_devices={torch.cuda.device_count()})")
+if torch.cuda.is_available():
+    tqdm.write(f"device: {torch.cuda.get_device_name(0)}")
+tqdm.write(f"amp: {'bf16' if amp_enabled else 'off'}")
+tqdm.write(f"tf32: {'on' if (device.type == 'cuda' and torch.backends.cuda.matmul.allow_tf32) else 'off'}")
 
-# non-config hyperparams
+tqdm.write(f"\nrun_dir: {os.path.relpath(run_dir, HERE)}")
+tqdm.write(f"config_path: {os.path.relpath(config_path, HERE)}")
+tqdm.write(f"corpus_path: {os.path.relpath(corpus_path, HERE)} (exists={corpus_path.exists()})")
+tqdm.write(f"encodings_path: {os.path.relpath(encodings_path, HERE)} (exists={encodings_path.exists()})")
+tqdm.write(f"vocab_path: {os.path.relpath(vocab_path, HERE)} (exists={vocab_path.exists()})")
+tqdm.write(f"token_ids_path: {os.path.relpath(token_ids_path, HERE)} (exists={token_ids_path.exists()})")
+if token_ids_path.exists():
+    tqdm.write(f"size of token_ids: {token_ids_path.stat().st_size / (1024**2):.1f} MB")
+
+tqdm.write(f"\nnum mergers (encodings): {len(encodings):_}")
+tqdm.write(f"num tokens in vocab: {vocab_size:_}")
+
+# hyperparams
+schema = {
+    "batch_size": int,
+    "d_model": int,
+    "dropout": float,
+    "eval_batches": int,
+    "eval_every": int,
+    "grad_accum_steps": int,
+    "grad_clip": float,
+    "log_every": int,
+    "lr": float,
+    "min_count": int,
+    "num_blocks": int,
+    "seq_len": int,
+    "train_tokens": float,
+    "val_frac": float,
+    "warmup_frac": float,
+    "weight_decay": float,
+}
+locals().update({k: fn(config["transformer"][k]) for k, fn in schema.items()})
+
+# dependent hyperparams
 num_heads = d_model // 64 # so d_head = d_model / num_heads = 64
 d_ff = 4 * d_model
 
@@ -117,9 +121,7 @@ d_ff = 4 * d_model
 keep_token_ids = [i for i in range(vocab_size) if int(vocab[str(i)]["count"]) >= min_count]
 index_to_token = [vocab[str(i)]["string"] for i in keep_token_ids]
 V = len(index_to_token) # TODO: understand discrepancy between vocab_size and V
-tqdm.write(f"pruned vocab: min_count={min_count} -> V={V}")
 
-t0 = time.perf_counter()
 token_ids = load_or_create_token_ids(
     language,
     timestamp,
@@ -128,17 +130,16 @@ token_ids = load_or_create_token_ids(
     encodings=encodings,
     vocab=vocab,
 )
-tqdm.write(f"loaded token_ids: len={len(token_ids):,} dtype={token_ids.dtype} ({token_ids.nbytes / (1024**2):.1f} MB) in {time.perf_counter() - t0:.1f}s")
 
 # map token IDs to embedding indices (and drop pruned tokens)
 token_id_to_index = np.full(vocab_size, -1, dtype=np.int32)
 for i, token_id in enumerate(keep_token_ids):
     token_id_to_index[token_id] = i
-tqdm.write("building indeces_corpus_to_token (this can be slow on large corpora)...")
+tqdm.write("\nSTART: building indeces_corpus_to_token")
 t0 = time.perf_counter()
 indeces_corpus_to_token = token_id_to_index[token_ids]
 indeces_corpus_to_token = indeces_corpus_to_token[indeces_corpus_to_token >= 0]
-tqdm.write(f"built indeces_corpus_to_token: len={len(indeces_corpus_to_token):,} in {time.perf_counter() - t0:.1f}s")
+tqdm.write(f"END: built indeces_corpus_to_token in {time.perf_counter() - t0:.1f}s (length: {len(indeces_corpus_to_token):_})")
 
 # new ckpt if model number not passed as argument
 if model_number is None:
@@ -148,19 +149,20 @@ if model_number is None:
 else:
     checkpoint_path = run_dir / f"{language}_transformer_{timestamp}_{model_number}.ckpt"
     resume = True
-tqdm.write(f"checkpoint_path: {checkpoint_path} (resume={resume})")
+tqdm.write(f"\ncheckpoint_path: {os.path.relpath(checkpoint_path, HERE)} (resume: {resume})")
 corpus_len = len(indeces_corpus_to_token)
 
 tokens_per_step = batch_size * seq_len * grad_accum_steps
 total_steps = int(math.ceil(train_tokens / tokens_per_step))
 warmup_steps = max(1, int(total_steps * warmup_frac))
-tqdm.write(f"train_tokens={train_tokens:,} tokens_per_step={tokens_per_step:,} total_steps={total_steps:,} warmup_steps={warmup_steps:,}")
+tqdm.write(f"\ntrain_tokens: {int(train_tokens):_}\ntokens_per_step: {tokens_per_step:_}\ntotal_steps: {total_steps:_}\nwarmup_steps: {warmup_steps:_}")
 
 # split corpus into train/val (contiguous split, LM-style)
 val_start = int(corpus_len * (1.0 - val_frac))
 train_token_ids = indeces_corpus_to_token[:val_start]
 val_token_ids = indeces_corpus_to_token[val_start:]
-tqdm.write(f"train/val split: train_len={len(train_token_ids):,} val_len={len(val_token_ids):,} (val_frac={val_frac})")
+tqdm.write(f"\ntrain_len: {len(train_token_ids):_}")
+tqdm.write(f"val_len: {len(val_token_ids):_}")
 
 def positional_encoding(seq_len, d_model, device):
     positions = torch.arange(seq_len, device=device, dtype=torch.float32).unsqueeze(1) # (n, 1)
@@ -203,7 +205,6 @@ class TransformerBlock(nn.Module):
         K = K.reshape(B, T, self.num_heads, self.d_head).transpose(1, 2)
         V = V.reshape(B, T, self.num_heads, self.d_head).transpose(1, 2)
 
-        # TODO: read about PyTorch SDPA / FlashAttention kernels
         O = F.scaled_dot_product_attention(Q, K, V, is_causal=True)
         O = O.transpose(1, 2).reshape(B, T, self.num_heads * self.d_head)
         O = self.dropout_attn(self.W_O(O))
@@ -233,7 +234,6 @@ adamw_sig = inspect.signature(torch.optim.AdamW)
 fused_adamw = device.type == "cuda" and ("fused" in adamw_sig.parameters)
 optimizer_kwargs = {"lr": lr, "betas": (0.9, 0.95), "eps": 1e-8}
 if fused_adamw:
-    # TODO: read about fused AdamW (and when it helps)
     optimizer_kwargs["fused"] = True
 optimizer = torch.optim.AdamW(
     [
@@ -242,7 +242,6 @@ optimizer = torch.optim.AdamW(
     ],
     **optimizer_kwargs,
 )
-tqdm.write(f"adamw_fused: {'on' if fused_adamw else 'off'}")
 
 start_step = 0
 best_val_ppl = float("inf")
@@ -265,12 +264,12 @@ if resume:
     torch.set_rng_state(ckpt["rng_state_torch"].cpu())
     if torch.cuda.is_available() and ckpt["rng_state_cuda"] is not None:
         torch.cuda.set_rng_state_all([s.cpu() for s in ckpt["rng_state_cuda"]])
-    tqdm.write(f"resuming from: {checkpoint_path} (step={start_step}, best_val_ppl={best_val_ppl:.2f})")
+    tqdm.write(f"\nresuming from: {os.path.relpath(checkpoint_path, HERE)}\n(start step: {start_step:_})")
 
-compile_enabled = device.type == "cuda" and hasattr(torch, "compile")
+compile_enabled = (device.type == "cuda" and hasattr(torch, "compile"))
+tqdm.write(f"\nadamw_fused: {'on' if fused_adamw else 'off'}")
 if compile_enabled:
-    # TODO: read about torch.compile (and why it can speed up steady-state training)
-    tqdm.write("torch.compile: on")
+    tqdm.write("torch.compile: on\n")
     model = torch.compile(model, mode="reduce-overhead")
 
 offsets = np.arange(seq_len, dtype=np.int64)
@@ -408,36 +407,4 @@ for step in pbar:
                 },
                 checkpoint_path,
             )
-
-def token_to_cli(token: str) -> str:
-    if token.startswith(" "):
-        n = len(token) - len(token.lstrip(" "))
-        return ("_" * n) + token[n:]
-    return token
-
-model.eval()
-E.eval()
-final_lay_norm.eval()
-U.eval()
-dropout_embed.eval()
-with torch.no_grad():
-    for _ in range(5):
-        start = np.random.randint(0, corpus_len - seq_len - 1)
-        context = indeces_corpus_to_token[start : start + seq_len]
-        true_next = int(indeces_corpus_to_token[start + seq_len])
-
-        x = torch.as_tensor(context, dtype=torch.long, device=device).unsqueeze(0)
-        with torch.autocast(device_type=device.type, dtype=amp_dtype, enabled=amp_enabled):
-            X = dropout_embed(E(x) + pe)
-            logits = U(final_lay_norm(model(X)))[0, -1]  # (V,)
-        probs = torch.softmax(logits, dim=-1)
-        values, indices = torch.topk(probs, k=10)
-
-        context_text = "".join(index_to_token[int(t)] for t in context[-10:])
-        top5 = [(token_to_cli(index_to_token[int(j)]), float(v)) for v, j in zip(values, indices)]
-        print("\n---")
-        print(context_text)
-        print("Target:", token_to_cli(index_to_token[true_next]))
-        print("Top 5:", top5)
-# keep this here do not indent!!!
-# tqdm.write(f"saved: {checkpoint_path}")
+tqdm.write(f"saved: {checkpoint_path}")
