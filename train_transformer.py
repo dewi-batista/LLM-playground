@@ -27,28 +27,17 @@ import yaml
 
 # command line input
 if len(sys.argv) < 3 or sys.argv[1] in {"-h", "--help"}:
-    print(
-        f"usage: python {Path(__file__).name} <language> <vocab_timestamp> [model_number]\n"
-        "       python train_transformer.py <language> <vocab_timestamp> --sweep config/transformer_sweep.yaml"
-    )
+    print(f"usage: python {Path(__file__).name} <language> <vocab_timestamp> [model_number]\n")
     raise SystemExit(1)
 
 args = sys.argv[1:]
 language = args[0]
 timestamp = args[1]
-sweep_path = None
-if "--sweep" in args:
-    i = args.index("--sweep")
-    sweep_path = Path(args[i + 1])
-    args = args[:i] + args[i + 2 :]
 
 model_number = int(args[2]) if len(args) > 2 else None
 resume = model_number is not None
 if len(args) > 3:
     print(f"ERROR: unknown args: {args[3:]}")
-    raise SystemExit(1)
-if sweep_path is not None and resume:
-    print("ERROR: can't use --sweep and resume at the same time")
     raise SystemExit(1)
 
 # NOTE: I learned recently of an "mps" device which some Apple MacBooks have.
@@ -61,62 +50,11 @@ HERE = Path(__file__).resolve().parent
 run_dir = HERE / "models" / language / timestamp
 run_dir.mkdir(parents=True, exist_ok=True)
 
+config_path = HERE / "config" / "config.yaml"
 corpus_path = HERE / "data" / f"{language}.txt"
 encodings_path = run_dir / f"{language}_{timestamp}.pkl"
 token_ids_path = run_dir / f"{language}_{timestamp}.npy"
 vocab_path = run_dir / f"{language}_{timestamp}.json"
-
-base_config_path = HERE / "config" / "config.yaml"
-if sweep_path is not None:
-    if not sweep_path.is_absolute():
-        sweep_path = HERE / sweep_path
-    with open(base_config_path, "r") as f:
-        base_config = yaml.safe_load(f)
-    with open(sweep_path, "r") as f:
-        sweep = yaml.safe_load(f)
-
-    runs = sweep.get("runs") if isinstance(sweep, dict) else sweep
-    if not isinstance(runs, list) or not runs:
-        print("ERROR: sweep file must be a non-empty list (or {runs: [...]})")
-        raise SystemExit(1)
-
-    allowed = {
-        "batch_size",
-        "seq_len",
-        "d_model",
-        "num_blocks",
-        "lr",
-        "train_tokens",
-        "dropout",
-    }
-    for run in runs:
-        unknown = sorted(set(run) - allowed)
-        if unknown:
-            print(f"ERROR: unknown sweep keys: {unknown}")
-            raise SystemExit(1)
-
-    script_path = Path(__file__).resolve()
-    for idx, run in enumerate(runs, start=1):
-        config = dict(base_config)
-        config["transformer"] = dict(base_config.get("transformer", {}))
-        config["transformer"].update(run)
-
-        run_config_path = run_dir / f"transformer_sweep_{idx}.yaml"
-        with open(run_config_path, "w") as f:
-            yaml.safe_dump(config, f)
-
-        env = dict(os.environ)
-        env["TRANSFORMER_CONFIG_PATH"] = str(run_config_path)
-        print(f"\n=== sweep {idx}/{len(runs)}: {run} ===")
-        subprocess.run([sys.executable, str(script_path), language, timestamp], check=True, env=env)
-
-    raise SystemExit(0)
-
-config_path = Path(os.environ.get("TRANSFORMER_CONFIG_PATH", str(base_config_path)))
-if not config_path.is_absolute():
-    config_path = HERE / config_path
-with open(config_path, "r") as f:
-    config = yaml.safe_load(f)
 
 # NOTE: The following lines are pre-training sanity checks.
 tqdm.write(f"config_path: {config_path}")
@@ -130,6 +68,9 @@ tqdm.write(f"vocab_path: {vocab_path} (exists={vocab_path.exists()})")
 tqdm.write(f"token_ids_path: {token_ids_path} (exists={token_ids_path.exists()})")
 if token_ids_path.exists():
     tqdm.write(f"token_ids_path size: {token_ids_path.stat().st_size / (1024**2):.1f} MB")
+
+with open(config_path, "r") as f:
+    config = yaml.safe_load(f)
 
 with open(encodings_path, "rb") as f:
     encodings = pickle.load(f)
