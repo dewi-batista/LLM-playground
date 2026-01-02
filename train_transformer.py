@@ -1,3 +1,5 @@
+# TODO: Learned positional encoding (this was an option this whole time???).
+
 from cache_tokenisation import load_or_create_token_ids
 from tfs_utils.checkpoint_safely import atomic_json_save, atomic_torch_save
 from tfs_utils.metrics import append_metrics_row, write_val_ppl_svg
@@ -13,7 +15,6 @@ import os
 import pickle
 import random
 import sys
-import time
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -93,8 +94,16 @@ seq_len           = int(cfg["seq_len"])
 train_tokens      = float(cfg["train_tokens"])
 val_frac          = float(cfg["val_frac"])
 warmup_frac       = float(cfg["warmup_frac"])
-weight_decay      = float(cfg["weight_decay"]) # L2 reg, not applied to bias/LN
-# the weights are what risk overfitting, not bias + LN params.
+weight_decay      = float(cfg["weight_decay"])
+
+# NOTE on gradient accumulation: Forward and backprop for K micro-batches then
+# take the mean in performing the optimisation step.
+
+# NOTE on gradient clipping: If vector of gradient exceeds tau (e.g. tau = 1)
+# then resize params relevant to update (recall dropout) to length tau.
+
+# NOTE on weight decay: Just L2 reg. and not applied to bias/LN. Matrix weights
+# are what risk overfitting, not biases or LN parameters.
 
 # dependent hyperparams
 num_heads = d_model // 64 # so d_head = d_model / num_heads = 64
@@ -187,11 +196,12 @@ class TransformerBlock(nn.Module):
         O = O.transpose(1, 2).reshape(B, T, self.num_heads * self.d_head)
         X = X + self.dropout_attn(self.W_O(O))
 
-        H = self.ln2(X)
+        H = self.ln2(X) # pre-addition LN -> more stable training
         X = X + self.dropout_ffn(self.W_2(self.act(self.W_1(H))))
         return X
 
-# model init (GPT-2 style weight initialisation was suggested to me)
+# GPT-2-style weight-init (suggested to me) for stability
+# W elements ~ N(0, 0.02), biases = 0, layer norm scale = 1, shift = 0
 def init_gpt2(m):
     if isinstance(m, nn.Linear):
         nn.init.normal_(m.weight, mean=0.0, std=0.02)
