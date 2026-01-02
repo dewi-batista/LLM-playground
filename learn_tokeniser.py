@@ -1,7 +1,6 @@
 from array import array
 from collections import Counter
 from datetime import datetime
-from itertools import pairwise
 from pathlib import Path
 from tqdm import tqdm
 
@@ -20,15 +19,16 @@ MODELS_DIR.mkdir(parents=True, exist_ok=True)
 # ["banana", " orange"] in which the second has one starting whitespace.
 
 # hyperparams
+# NOTE: vocab_size_max must be <= 65_280 so token ids fit in uint16 ("H").
 vocab_size_max = 30_000
 stream_threshold_bytes = 512 * 1024**2 # 512 MB
 
 # pre-tokeniser applied one-by-one yielding a generator
-def iter_pre_tokens(sequence: str):
-    sequence = sequence.strip()
+def iter_pre_tokens(corpus: str):
+    corpus = corpus.strip()
     first = True
     # "\S" ~ non-whitespace, "+" ~ multiple at once
-    for match in re.finditer(r"\S+", sequence):
+    for match in re.finditer(r"\S+", corpus):
         # NOTE: .group(0) is the entire matched text, so each \S+ run. First
         # token does not get pre-posed with a whitespace.
         token = match.group(0)
@@ -55,12 +55,12 @@ def pre_token_counts_from_path(corpus) -> Counter:
 # merge a token pair within a word
 def merge_pair(word, pair: tuple, new_token: int):
     a, b = pair
-    merged = array(word.typecode)
+    merged = array("H") # "H" -> unsigned 16-bit ints
     i = 0
     while i < len(word):
-        if i < len(word) - 1 and word[i] == a and word[i + 1] == b:
+        if i < len(word) - 1 and (word[i] == a and word[i + 1] == b):
             merged.append(new_token)
-            i += 2 # to account for skipping the index of latter token
+            i += 2 # to account for skipping the index of second token
         else:
             merged.append(word[i])
             i += 1
@@ -82,12 +82,13 @@ def learn_encodings(token_counts, corpus_name):
     run_dir = MODELS_DIR / corpus_name / run_timestamp
     run_dir.mkdir(parents=True, exist_ok=True)
 
-    # Use compact arrays to avoid OOM on huge corpuses.
-    token_type = "H" if (256 + vocab_size_max) < 65_536 else "I"
+    # compact arrays used to avoid OOM on huge corpuses, not 100% sure of them
     words = []
-    word_counts = array("Q")
+    word_counts = array("Q") # "Q" -> unsigned 64-bit ints
     for token, count in token_counts.items():
-        words.append(array(token_type, token.encode("utf-8")))
+        word = array("H")
+        word.extend(token.encode("utf-8"))
+        words.append(word)
         word_counts.append(int(count))
     del token_counts
 
@@ -155,7 +156,7 @@ def learn_encodings(token_counts, corpus_name):
                 new_freq = pair_freqs.get(p, 0) + c * count
                 pair_freqs[p] = new_freq
                 heapq.heappush(heap, (-new_freq, p))
-                if p not in old_pairs:
+                if p not in old_pairs or p not in pair_to_words:
                     pair_to_words.setdefault(p, array("I")).append(wid)
 
             words[wid] = new_word
@@ -229,10 +230,24 @@ if __name__ == "__main__":
     corpus_name = sys.argv[1]
 
     corpus_path = HERE / "data" / f"{corpus_name}.txt"
-    with open(corpus_path) as corpus:
-        if corpus_path.stat().st_size < stream_threshold_bytes:
+    streaming = corpus_path.stat().st_size >= stream_threshold_bytes
+    if not streaming:
+        with open(corpus_path) as corpus:
             token_counts = Counter(iter_pre_tokens(corpus.read()))
+    else:
+        token_counts_path = MODELS_DIR / corpus_name / "pre_token_counts.pkl"
+        token_counts_path.parent.mkdir(parents=True, exist_ok=True)
+        if token_counts_path.exists():
+            with open(token_counts_path, "rb") as f:
+                token_counts = pickle.load(f)
+            tqdm.write("loaded token counts")
         else:
-            token_counts = pre_token_counts_from_path(corpus)
+            with open(corpus_path) as corpus:
+                token_counts = pre_token_counts_from_path(corpus)
             tqdm.write("done counting")
+            with open(token_counts_path, "wb") as f:
+                pickle.dump(token_counts, f, protocol=pickle.HIGHEST_PROTOCOL)
+            tqdm.write("saved token counts")
     learn_encodings(token_counts, corpus_name)
+    if streaming:
+        token_counts_path.unlink(missing_ok=True)
