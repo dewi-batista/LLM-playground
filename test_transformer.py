@@ -16,9 +16,8 @@ MODELS_DIR = HERE / "models"
 
 BENCH_SENTENCES = [
     "The capital of France is Paris",
+    "Rome is the capital of Italy",
     "Paris is the capital of France",
-    "Paris is the capital of France.",
-    "Paris is the capital of France,",
     "The capital of Italy is Rome",
     "The quick brown fox jumps over the lazy dog",
     "The largest planet in the solar system is Jupiter",
