@@ -93,7 +93,8 @@ seq_len           = int(cfg["seq_len"])
 train_tokens      = float(cfg["train_tokens"])
 val_frac          = float(cfg["val_frac"])
 warmup_frac       = float(cfg["warmup_frac"])
-weight_decay      = float(cfg["weight_decay"])
+weight_decay      = float(cfg["weight_decay"]) # L2 reg, not applied to bias/LN
+# the weights are what risk overfitting, not bias + LN params.
 
 # dependent hyperparams
 num_heads = d_model // 64 # so d_head = d_model / num_heads = 64
@@ -118,10 +119,9 @@ token_id_to_index = np.full(vocab_size, -1, dtype=np.int32)
 for i, token_id in enumerate(keep_token_ids):
     token_id_to_index[token_id] = i
 tqdm.write("\nSTART: building indeces_corpus_to_token")
-t0 = time.perf_counter()
 indeces_corpus_to_token = token_id_to_index[token_ids]
 indeces_corpus_to_token = indeces_corpus_to_token[indeces_corpus_to_token >= 0]
-tqdm.write(f"END: built indeces_corpus_to_token in {time.perf_counter() - t0:.1f}s (length: {len(indeces_corpus_to_token):_})")
+tqdm.write(f"END: built indeces_corpus_to_token (length: {len(indeces_corpus_to_token):_})")
 
 # new ckpt if model number not passed as argument
 if model_number is None:
@@ -182,6 +182,7 @@ class TransformerBlock(nn.Module):
         K = K.reshape(B, T, self.num_heads, self.d_head).transpose(1, 2)
         V = V.reshape(B, T, self.num_heads, self.d_head).transpose(1, 2)
 
+        # regular attention just very-well optimised
         O = F.scaled_dot_product_attention(Q, K, V, is_causal=True)
         O = O.transpose(1, 2).reshape(B, T, self.num_heads * self.d_head)
         X = X + self.dropout_attn(self.W_O(O))
@@ -244,6 +245,7 @@ params = list(E.parameters()) + list(model.parameters()) + list(final_lay_norm.p
 decay_params = [p for p in params if p.ndim >= 2]
 no_decay_params = [p for p in params if p.ndim < 2]
 adamw_sig = inspect.signature(torch.optim.AdamW)
+# very well-optimised AdamW
 fused_adamw = device.type == "cuda" and ("fused" in adamw_sig.parameters)
 optimizer_kwargs = {"lr": lr, "betas": (0.9, 0.95), "eps": 1e-8}
 if fused_adamw:
@@ -326,12 +328,13 @@ last_recent_loss = None
 log_steps = 0
 for step in pbar:
 
-    # update lr of all parmams, dependent on if in warmup stage
+    # update lr of all parmams: warmup -> cosine decay
     if step < warmup_steps:
         current_lr = lr * (step + 1) / warmup_steps
     else:
+        # cosine decay is: slow (early) -> aggerssive (mid) -> slow (late)
         progress = (step - warmup_steps) / max(1, total_steps - warmup_steps)
-        current_lr = lr * 0.5 * (1.0 + math.cos(math.pi * progress))
+        current_lr = (1.0 + math.cos(math.pi * progress)) * (lr / 2)
     for group in optimizer.param_groups:
         group["lr"] = current_lr
     optimizer.zero_grad()
