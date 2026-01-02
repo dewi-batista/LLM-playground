@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" width="900" height="420" viewBox="0 0 900 420">
+<rect x="0" y="0" width="100%" height="100%" fill="white"/>
+<text x="70" y="24" font-family="monospace" font-size="16">val_ppl (last=478.93, best=478.93, step=2_000)</text>
+<line x1="70" y1="40" x2="70" y2="365" stroke="#333" stroke-width="1"/>
+<line x1="70" y1="365" x2="880" y2="365" stroke="#333" stroke-width="1"/>
+<polyline fill="none" stroke="#1f77b4" stroke-width="2" points="70.0,54.8 880.0,350.2"/>
+<polyline fill="none" stroke="#ff7f0e" stroke-width="2" points="70.0,54.8 880.0,350.2"/>
+<text x="70" y="402" font-family="monospace" font-size="12" fill="#555">steps: 1_000 → 2_000</text>
+<text x="70" y="416" font-family="monospace" font-size="12" fill="#555">ppl: 430.12 → 1503.90 (orange=best-so-far)</text>
+</svg>
