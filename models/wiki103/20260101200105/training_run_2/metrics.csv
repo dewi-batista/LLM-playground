@@ -1,3 +1,4 @@
 global_step,seen_tokens,lr,recent_loss,step_ms,tok_s_M,vram_gb,val_ppl,best_val_ppl,saved
 1000,51.2M,0.000128,7.3214,,,,1455.09,1455.09,1
 2000,102M,0.00025,6.1672,,,,478.93,478.93,1
+3000,154M,0.0002499,5.5415,,,,250.04,250.04,1
