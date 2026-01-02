@@ -1,6 +1,4 @@
-# NOTE: This is my first time including types in functions. Useful for this
-# sort of program due to tons of potential types problems during tokenisation.
-
+from array import array
 from collections import Counter
 from datetime import datetime
 from itertools import pairwise
@@ -17,31 +15,23 @@ HERE = Path(__file__).resolve().parent
 MODELS_DIR = HERE / "models"
 MODELS_DIR.mkdir(parents=True, exist_ok=True)
 
-# hyperparams
-vocab_size_max = 30_000
-stream_threshold_bytes = 512 * 1024**2 # 512 MB
-
 # NOTE: GPT-2's tokeniser preserves exact white space but we won't. During pre-
 # tokenisation, we remove trailing whitespaces then split; "banana  orange" ->
 # ["banana", " orange"] in which the second has one starting whitespace.
 
-def pre_tokenise(sequence: str) -> list:
-    sequence = sequence.strip()
-    tokens = sequence.split()
-    for idx in range(1, len(tokens)):
-        tokens[idx] = " " + tokens[idx]
-    return tokens
+# hyperparams
+vocab_size_max = 30_000
+stream_threshold_bytes = 512 * 1024**2 # 512 MB
 
-# like pre_tokenise() applied one-by-one as a generator
+# pre-tokeniser applied one-by-one yielding a generator
 def iter_pre_tokens(sequence: str):
     sequence = sequence.strip()
     first = True
+    # "\S" ~ non-whitespace, "+" ~ multiple at once
     for match in re.finditer(r"\S+", sequence):
-        # NOTE: .group(0) is the entire matched text, so the whole \S+ run.
-        # re.finditer(r"\S+", sequence) is a bit like .split() as a generator.
+        # NOTE: .group(0) is the entire matched text, so each \S+ run. First
+        # token does not get pre-posed with a whitespace.
         token = match.group(0)
-        
-        # first token does not get pre-posed with a whitespace
         if first:
             yield token
             first = False
@@ -49,41 +39,23 @@ def iter_pre_tokens(sequence: str):
             yield " " + token
 
 # streaming version of iter_pre_tokens() for large texts
-def pre_token_counts_from_path(corpus_path: Path) -> Counter:
+def pre_token_counts_from_path(corpus) -> Counter:
     token_counts = Counter()
     first = True
-    with open(corpus_path) as f:
-        for line in tqdm(f, desc="Counting pre-tokens", unit="line"):
-            for match in re.finditer(r"\S+", line):
-                token = match.group(0)
-                if first:
-                    token_counts[token] += 1
-                    first = False
-                else:
-                    token_counts[" " + token] += 1
+    for line in tqdm(corpus, desc="Counting pre-tokens", unit="line"):
+        for match in re.finditer(r"\S+", line):
+            token = match.group(0)
+            if first:
+                token_counts[token] += 1
+                first = False
+            else:
+                token_counts[" " + token] += 1
     return token_counts
 
-def tokens_UTF(tokens: list) -> list:
-    for i in range(len(tokens)):
-        tokens[i] = list(tokens[i].encode("utf-8"))
-    return tokens
-
-def tokenise(corpus: list, encodings: list) -> list:
-    if type(corpus) == str:
-        corpus = tokens_UTF(pre_tokenise(corpus))
-    for encoding in encodings:
-        for idx_word in range(len(corpus)):
-            token_UTF = corpus[idx_word]
-            for i in range(len(token_UTF) - 1):
-                if token_UTF[i:i+2] == encoding[0]:
-                    token_UTF[i] = encoding[1]
-                    token_UTF.pop(i+1)
-    return corpus
-
 # merge a token pair within a word
-def merge_pair(word: list, pair: tuple, new_token: int) -> list:
+def merge_pair(word, pair: tuple, new_token: int):
     a, b = pair
-    merged = []
+    merged = array(word.typecode)
     i = 0
     while i < len(word):
         if i < len(word) - 1 and word[i] == a and word[i + 1] == b:
@@ -103,37 +75,42 @@ def pair_counts(word: list) -> dict:
 
 # NOTE: The application of learn_encodings() assumes sufficiently-many pairs
 # within the corpus itself. Bare this in mind when unit testing.
-
-def learn_encodings(corpus, language):
-    # NOTE: This learns BPE merges using word-type counts, rather than scanning
-    # every token occurrence in the corpus. Same result but faster.
-
+# NOTE: This learns BPE merges using word-type counts, rather than scanning
+# every token occurrence in the corpus. Same result but faster.
+def learn_encodings(token_counts, corpus_name):
     run_timestamp = datetime.now().strftime("%Y%m%d%H%M%S")
-    run_dir = MODELS_DIR / language / run_timestamp
+    run_dir = MODELS_DIR / corpus_name / run_timestamp
     run_dir.mkdir(parents=True, exist_ok=True)
 
-    if isinstance(corpus, Counter):
-        token_counts = corpus
-    elif type(corpus) == str:
-        token_counts = Counter(iter_pre_tokens(corpus))
-    else:
-        token_counts = Counter(corpus)
+    # Use compact arrays to avoid OOM on huge corpuses.
+    token_type = "H" if (256 + vocab_size_max) < 65_536 else "I"
+    words = []
+    word_counts = array("Q")
+    for token, count in token_counts.items():
+        words.append(array(token_type, token.encode("utf-8")))
+        word_counts.append(int(count))
+    del token_counts
 
-    words = [list(token.encode("utf-8")) for token in token_counts.keys()]
-    word_counts = list(token_counts.values())
-
-    pair_freqs = {}         # (a, b) -> total frequency (weighted by word count)
-    pair_to_words = {}      # (a, b) -> set(word_id)
+    pair_freqs = {}    # (a, b) -> total frequency (weighted by word count)
+    pair_to_words = {} # (a, b) -> word_ids (stale ids are fine)
     for wid, word in enumerate(words):
         count = word_counts[wid]
-        for pair in pairwise(word):
+        if len(word) < 2:
+            continue
+        pairs_in_word = set()
+        prev = word[0]
+        for cur in word[1:]:
+            pair = (prev, cur)
             pair_freqs[pair] = pair_freqs.get(pair, 0) + count
-            pair_to_words.setdefault(pair, set()).add(wid)
+            pairs_in_word.add(pair)
+            prev = cur
+        for pair in pairs_in_word:
+            pair_to_words.setdefault(pair, array("I")).append(wid)
 
     heap = [(-freq, pair) for pair, freq in pair_freqs.items()]
     heapq.heapify(heap)
 
-    encodings = []  # items are of the form [[a, b], new_token]
+    encodings = [] # items are of the form [[a, b], new_token]
     for i in tqdm(range(vocab_size_max), desc="Learning encodings", bar_format="{l_bar}{bar} | {elapsed} | {rate_fmt}"):
         while heap:
             neg_freq, pair = heapq.heappop(heap)
@@ -152,7 +129,7 @@ def learn_encodings(corpus, language):
         new_token = 256 + i
         encodings.append([list(pair), new_token])
 
-        affected = list(pair_to_words.get(pair, ()))
+        affected = pair_to_words.get(pair, ())
         for wid in affected:
             word = words[wid]
             count = word_counts[wid]
@@ -167,15 +144,10 @@ def learn_encodings(corpus, language):
                 new_freq = pair_freqs.get(p, 0) - c * count
                 if new_freq <= 0:
                     pair_freqs.pop(p, None)
+                    pair_to_words.pop(p, None)
                 else:
                     pair_freqs[p] = new_freq
                     heapq.heappush(heap, (-new_freq, p))
-
-                s = pair_to_words.get(p)
-                if s is not None:
-                    s.discard(wid)
-                    if not s:
-                        pair_to_words.pop(p, None)
 
             # add new pairs
             new_pairs = pair_counts(new_word)
@@ -183,7 +155,8 @@ def learn_encodings(corpus, language):
                 new_freq = pair_freqs.get(p, 0) + c * count
                 pair_freqs[p] = new_freq
                 heapq.heappush(heap, (-new_freq, p))
-                pair_to_words.setdefault(p, set()).add(wid)
+                if p not in old_pairs:
+                    pair_to_words.setdefault(p, array("I")).append(wid)
 
             words[wid] = new_word
     
@@ -199,6 +172,7 @@ def learn_encodings(corpus, language):
         a, b = pair
         token_bytes[new_token] = token_bytes[a] + token_bytes[b]
 
+    # construct distribution
     Z = sum(count ** 0.75 for count in token_id_counts)
     vocab = {
         str(token_id): {
@@ -212,6 +186,7 @@ def learn_encodings(corpus, language):
     vocab_path = run_dir / "vocabulary.json"
     encodings_path = run_dir / "merges.pkl"
 
+    # NOTE: The effort below is to make the vocab JSON file easy to skim.
     index_width = len(str(vocab_size - 1))
     count_width = len(str(max(token_id_counts)))
     string_width = max(len(json.dumps(vocab[str(i)]["string"], ensure_ascii=False)) for i in range(vocab_size))
@@ -239,26 +214,25 @@ def learn_encodings(corpus, language):
             pad = " " * (index_width - len(key))
             f.write(f'    "{key}": {pad}{subdict}{comma}\n')
         f.write("}\n")
+
+    # write the mergers list to a pkl file
     with open(encodings_path, "wb") as f:
         pickle.dump(encodings, f)
     print(f"saved: {run_dir}")
 
 if __name__ == "__main__":
 
-    # CLI input
+    # CLI input: keep corpus_name simple, e.g. "welsh"
     if len(sys.argv) < 2 or sys.argv[1] in {"-h", "--help"}:
-        print(f"usage: python {Path(__file__).name} <language>")
+        print(f"usage: python {Path(__file__).name} <corpus_name>")
         raise SystemExit(1)
+    corpus_name = sys.argv[1]
 
-    # "language" is just the name of the dataset, keep it simple, e.g. "welsh"
-    language = sys.argv[1]
-    corpus_path = HERE / "data" / f"{language}.txt"
-    if corpus_path.stat().st_size > stream_threshold_bytes:
-        token_counts = pre_token_counts_from_path(corpus_path)
-        tqdm.write("done counting")
-        tqdm.write(f"unique={len(token_counts)}")
-        learn_encodings(token_counts, language)
-    else:
-        with open(corpus_path) as f:
-            corpus = f.read()
-        learn_encodings(corpus, language)
+    corpus_path = HERE / "data" / f"{corpus_name}.txt"
+    with open(corpus_path) as corpus:
+        if corpus_path.stat().st_size < stream_threshold_bytes:
+            token_counts = Counter(iter_pre_tokens(corpus.read()))
+        else:
+            token_counts = pre_token_counts_from_path(corpus)
+            tqdm.write("done counting")
+    learn_encodings(token_counts, corpus_name)

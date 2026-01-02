@@ -1,5 +1,4 @@
 from pathlib import Path
-from train_tokeniser import tokenise
 
 import pickle
 import sys
@@ -16,6 +15,30 @@ encodings_path = HERE / "models" / language / timestamp / "merges.pkl"
 
 with open(encodings_path, "rb") as f:
     encodings = pickle.load(f)
+
+def tokens_UTF(tokens: list) -> list:
+    for i in range(len(tokens)):
+        tokens[i] = list(tokens[i].encode("utf-8"))
+    return tokens
+
+def pre_tokenise(sequence: str) -> list:
+    sequence = sequence.strip()
+    tokens = sequence.split()
+    for idx in range(1, len(tokens)):
+        tokens[idx] = " " + tokens[idx]
+    return tokens
+
+def tokenise(corpus: list, encodings: list) -> list:
+    if type(corpus) == str:
+        corpus = tokens_UTF(pre_tokenise(corpus))
+    for encoding in encodings:
+        for idx_word in range(len(corpus)):
+            token_UTF = corpus[idx_word]
+            for i in range(len(token_UTF) - 1):
+                if token_UTF[i:i+2] == encoding[0]:
+                    token_UTF[i] = encoding[1]
+                    token_UTF.pop(i+1)
+    return corpus
 
 encodings_dict_reversed = {}
 for i in range(len(encodings)):
