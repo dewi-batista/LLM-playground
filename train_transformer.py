@@ -83,6 +83,7 @@ batch_size        = int(cfg["batch_size"])
 d_model           = int(cfg["d_model"])
 dropout           = float(cfg["dropout"])
 early_stop_delta  = float(cfg["early_stop_delta"])
+early_stop_patience = int(cfg.get("early_stop_patience", 0))
 eval_batches      = int(cfg["eval_batches"])
 eval_every        = int(cfg["eval_every"])
 grad_accum_steps  = int(cfg["grad_accum_steps"])
@@ -155,6 +156,7 @@ tokens_per_step = batch_size * seq_len * grad_accum_steps
 total_steps = int(math.ceil(train_tokens / tokens_per_step))
 warmup_steps = max(1, int(total_steps * warmup_frac))
 tqdm.write(f"\ntrain_tokens: {int(train_tokens):_}\ntokens_per_step: {tokens_per_step:_}\ntotal_steps: {total_steps:_}\nwarmup_steps: {warmup_steps:_}")
+tqdm.write(f"early_stop: delta={early_stop_delta}, patience={early_stop_patience}")
 
 # split corpus into train/val (contiguous split, LM-style)
 val_start = int(corpus_len * (1.0 - val_frac))
@@ -336,6 +338,8 @@ def val_perplexity():
 last_recent_loss = None
 log_loss = 0.0
 log_steps = 0
+no_improve_evals = 0
+early_stopped = False
 pbar = tqdm(range(start_step, total_steps), desc="Train", unit=" batch", total=total_steps, initial=start_step)
 for step in pbar:
 
@@ -483,9 +487,16 @@ for step in pbar:
             },
         )
         write_val_ppl_svg(metrics_path, val_ppl_plot_path)
-        if early_stop_delta > 0 and is_best and prev_best_val_ppl < float("inf"):
-            delta = prev_best_val_ppl - val_ppl
-            if delta <= early_stop_delta:
-                tqdm.write(f"Early stopping invoked! val_ppl_delta={delta:.4f} <= {early_stop_delta}")
+        improvement = prev_best_val_ppl - val_ppl
+        if early_stop_patience > 0:
+            if improvement >= early_stop_delta:
+                no_improve_evals = 0
+            else:
+                no_improve_evals += 1
+            if no_improve_evals >= early_stop_patience:
+                early_stopped = True
                 break
-tqdm.write("Training complete!")
+        elif 0 < improvement <= early_stop_delta:
+            early_stopped = True
+            break
+tqdm.write("Training stopped early!" if early_stopped else "Training complete!")

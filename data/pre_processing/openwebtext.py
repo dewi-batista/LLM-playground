@@ -2,9 +2,7 @@ from datasets import load_dataset
 from tqdm import tqdm
 
 replacements = {
-    " @-@ ": "-",
-    " @.@ ": ".",
-    " @,@ ": ",",
+    # Spacing around punctuation
     " )": ")",
     "( ": "(",
     " .": ".",
@@ -13,7 +11,12 @@ replacements = {
     " ;": ";",
     " ?": "?",
     " !": "!",
-    " 's": "'s",
+    "’": "'",
+    "‘": "'",
+    "“": '"',
+    "”": '"',
+    "–": "-",
+    "—": "-",
 }
 
 data = load_dataset("Skylion007/openwebtext", streaming=True)
