@@ -19,6 +19,7 @@ MODELS_DIR.mkdir(parents=True, exist_ok=True)
 
 # hyperparams
 vocab_size_max = 30_000
+stream_threshold_bytes = 512 * 1024**2
 
 # NOTE: GPT-2's tokeniser preserves exact white space but we won't. During pre-
 # tokenisation, we remove trailing whitespaces then split; "banana  orange" ->
@@ -85,6 +86,21 @@ def iter_pre_tokens(sequence: str):
         else:
             yield " " + token
 
+# stream-friendly version of iter_pre_tokens() for a file
+def pre_token_counts_from_path(corpus_path: Path) -> Counter:
+    token_counts = Counter()
+    first = True
+    with open(corpus_path) as f:
+        for line in tqdm(f, desc="Counting pre-tokens", unit="line"):
+            for match in re.finditer(r"\S+", line):
+                token = match.group(0)
+                if first:
+                    token_counts[token] += 1
+                    first = False
+                else:
+                    token_counts[" " + token] += 1
+    return token_counts
+
 # NOTE: The application of this function assumes that there are sufficiently
 # many pairs in the corpus itself. Bare this in mind when unit testing.
 
@@ -96,7 +112,12 @@ def learn_encodings(corpus, language):
     run_dir = MODELS_DIR / language / run_timestamp
     run_dir.mkdir(parents=True, exist_ok=True)
 
-    token_counts = Counter(iter_pre_tokens(corpus)) if type(corpus) == str else Counter(corpus)
+    if isinstance(corpus, Counter):
+        token_counts = corpus
+    elif type(corpus) == str:
+        token_counts = Counter(iter_pre_tokens(corpus))
+    else:
+        token_counts = Counter(corpus)
 
     words = [list(token.encode("utf-8")) for token in token_counts.keys()]
     word_counts = list(token_counts.values())
@@ -234,7 +255,10 @@ if __name__ == "__main__":
     corpus_path = Path(sys.argv[2]) if len(sys.argv) > 2 else (HERE / "data" / f"{language}.txt")
     if not corpus_path.is_absolute():
         corpus_path = HERE / corpus_path
-    with open(corpus_path) as f:
-        corpus = f.read()
-
-    learn_encodings(corpus, language)
+    if corpus_path.stat().st_size > stream_threshold_bytes:
+        token_counts = pre_token_counts_from_path(corpus_path)
+        learn_encodings(token_counts, language)
+    else:
+        with open(corpus_path) as f:
+            corpus = f.read()
+        learn_encodings(corpus, language)
