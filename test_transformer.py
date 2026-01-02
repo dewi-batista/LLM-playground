@@ -428,8 +428,7 @@ def main():
         target_prob = float(torch.exp(best_logit - torch.logsumexp(logits, dim=-1)).item())
         # target_ppl = float(torch.exp(torch.logsumexp(logits, dim=-1) - target_logit).item())
 
-        match_note = "" if best_tok == target_token else f" (matched {token_to_cli(best_tok)})"
-        print(f"\n{context_text} [{token_to_cli(target_token)}, {rank}]{match_note}")
+        print(f"\n{context_text} [{token_to_cli(target_token)}, {rank}]")
         if target_pieces is not None and len(target_pieces) > 1:
             pieces_cli = [token_to_cli(index_to_token[int(i)]) for i in target_pieces]
             print(f"Target tokens: {pieces_cli}")
