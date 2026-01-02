@@ -15,8 +15,7 @@ METRICS_FIELDS = [
     "vram_gb",
     "val_ppl",
     "best_val_ppl",
-    "saved_best",
-    "saved_last",
+    "saved",
 ]
 
 
@@ -55,7 +54,7 @@ def _fmt_metrics_row(row: dict) -> dict:
             out[k] = f"{float(v):.1f}"
         elif k in {"val_ppl", "best_val_ppl"}:
             out[k] = f"{float(v):.2f}"
-        elif k in {"saved_best", "saved_last"}:
+        elif k == "saved":
             out[k] = str(int(v))
         else:
             out[k] = str(v)
