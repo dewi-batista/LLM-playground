@@ -1,5 +1,5 @@
-# NOTE: This is my first time including types in functions. Useful for these
-# programs since there are tons of potential confusions during tokenisation.
+# NOTE: This is my first time including types in functions. Useful for this
+# sort of program due to tons of potential types problems during tokenisation.
 
 from collections import Counter
 from datetime import datetime
@@ -19,7 +19,7 @@ MODELS_DIR.mkdir(parents=True, exist_ok=True)
 
 # hyperparams
 vocab_size_max = 30_000
-stream_threshold_bytes = 512 * 1024**2
+stream_threshold_bytes = 512 * 1024**2 # 512 MB
 
 # NOTE: GPT-2's tokeniser preserves exact white space but we won't. During pre-
 # tokenisation, we remove trailing whitespaces then split; "banana  orange" ->
@@ -31,6 +31,37 @@ def pre_tokenise(sequence: str) -> list:
     for idx in range(1, len(tokens)):
         tokens[idx] = " " + tokens[idx]
     return tokens
+
+# like pre_tokenise() applied one-by-one as a generator
+def iter_pre_tokens(sequence: str):
+    sequence = sequence.strip()
+    first = True
+    for match in re.finditer(r"\S+", sequence):
+        # NOTE: .group(0) is the entire matched text, so the whole \S+ run.
+        # re.finditer(r"\S+", sequence) is a bit like .split() as a generator.
+        token = match.group(0)
+        
+        # first token does not get pre-posed with a whitespace
+        if first:
+            yield token
+            first = False
+        else:
+            yield " " + token
+
+# streaming version of iter_pre_tokens() for large texts
+def pre_token_counts_from_path(corpus_path: Path) -> Counter:
+    token_counts = Counter()
+    first = True
+    with open(corpus_path) as f:
+        for line in tqdm(f, desc="Counting pre-tokens", unit="line"):
+            for match in re.finditer(r"\S+", line):
+                token = match.group(0)
+                if first:
+                    token_counts[token] += 1
+                    first = False
+                else:
+                    token_counts[" " + token] += 1
+    return token_counts
 
 def tokens_UTF(tokens: list) -> list:
     for i in range(len(tokens)):
@@ -49,7 +80,7 @@ def tokenise(corpus: list, encodings: list) -> list:
                     token_UTF.pop(i+1)
     return corpus
 
-# merge a pair across a word (left-to-right, non-overlapping)
+# merge a token pair within a word
 def merge_pair(word: list, pair: tuple, new_token: int) -> list:
     a, b = pair
     merged = []
@@ -57,7 +88,7 @@ def merge_pair(word: list, pair: tuple, new_token: int) -> list:
     while i < len(word):
         if i < len(word) - 1 and word[i] == a and word[i + 1] == b:
             merged.append(new_token)
-            i += 2 # to account for skipping th eindex of b
+            i += 2 # to account for skipping the index of latter token
         else:
             merged.append(word[i])
             i += 1
@@ -70,39 +101,8 @@ def pair_counts(word: list) -> dict:
         counts[pair] = counts.get(pair, 0) + 1
     return counts
 
-# like pre_tokenise() applied one-by-one as a generator
-def iter_pre_tokens(sequence: str):
-    sequence = sequence.strip()
-    first = True
-    for match in re.finditer(r"\S+", sequence):
-        # NOTE: .group(0) is the entire matched text, so the whole \S+ run.
-        # re.finditer(r"\S+", sequence) is a bit like .split() as a generator.
-        token = match.group(0)
-        
-        # first token does not get pre-posed with a whitespace
-        if first:
-            yield token
-            first = False
-        else:
-            yield " " + token
-
-# stream-friendly version of iter_pre_tokens() for a file
-def pre_token_counts_from_path(corpus_path: Path) -> Counter:
-    token_counts = Counter()
-    first = True
-    with open(corpus_path) as f:
-        for line in tqdm(f, desc="Counting pre-tokens", unit="line"):
-            for match in re.finditer(r"\S+", line):
-                token = match.group(0)
-                if first:
-                    token_counts[token] += 1
-                    first = False
-                else:
-                    token_counts[" " + token] += 1
-    return token_counts
-
-# NOTE: The application of this function assumes that there are sufficiently
-# many pairs in the corpus itself. Bare this in mind when unit testing.
+# NOTE: The application of learn_encodings() assumes sufficiently-many pairs
+# within the corpus itself. Bare this in mind when unit testing.
 
 def learn_encodings(corpus, language):
     # NOTE: This learns BPE merges using word-type counts, rather than scanning
@@ -245,18 +245,18 @@ def learn_encodings(corpus, language):
 
 if __name__ == "__main__":
 
-    # command line input
+    # CLI input
     if len(sys.argv) < 2 or sys.argv[1] in {"-h", "--help"}:
         print(f"usage: python {Path(__file__).name} <language>")
         raise SystemExit(1)
 
     # "language" is just the name of the dataset, keep it simple, e.g. "welsh"
     language = sys.argv[1]
-    corpus_path = Path(sys.argv[2]) if len(sys.argv) > 2 else (HERE / "data" / f"{language}.txt")
-    if not corpus_path.is_absolute():
-        corpus_path = HERE / corpus_path
+    corpus_path = HERE / "data" / f"{language}.txt"
     if corpus_path.stat().st_size > stream_threshold_bytes:
         token_counts = pre_token_counts_from_path(corpus_path)
+        tqdm.write("done counting")
+        tqdm.write(f"unique={len(token_counts)}")
         learn_encodings(token_counts, language)
     else:
         with open(corpus_path) as f:
