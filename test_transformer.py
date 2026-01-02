@@ -160,6 +160,25 @@ def encode_pre_tokens_to_indices(pre_tokens, bpe_encode, token_id_to_index):
     idx = idx[idx >= 0]
     return idx.tolist()
 
+PUNCT_SUFFIXES = [",", ".", ":", ";", "!", "?"]
+
+def target_variants(token: str) -> list[str]:
+    base = token.rstrip("".join(PUNCT_SUFFIXES))
+    variants = [token]
+    if base and base != token:
+        variants.append(base)
+    for p in PUNCT_SUFFIXES:
+        if base:
+            variants.append(base + p)
+    seen = set()
+    out = []
+    for v in variants:
+        if v in seen:
+            continue
+        seen.add(v)
+        out.append(v)
+    return out
+
 
 @torch.no_grad()
 def next_token_logits(prompt_indeces, E, model, final_lay_norm, U, pe):
@@ -384,12 +403,33 @@ def main():
             if len(target_pieces) > 1:
                 target_note = " (target is multi-token; rank shown for first token)"
 
-        target_logit = logits[int(target_idx)]
-        rank = int((logits > target_logit).sum().item()) + 1
-        target_prob = float(torch.exp(target_logit - torch.logsumexp(logits, dim=-1)).item())
+        candidates = []
+        for tok in target_variants(target_token):
+            idx = token_str_to_index.get(tok)
+            if idx is None:
+                pieces = encode_pre_tokens_to_indices([tok], bpe_encode, token_id_to_index)
+                if not pieces:
+                    continue
+                idx = int(pieces[0])
+            candidates.append((tok, int(idx)))
+
+        best_tok, best_idx = (target_token, int(target_idx))
+        best_rank = None
+        best_logit = None
+        for tok, idx in candidates or [(target_token, int(target_idx))]:
+            t_logit = logits[idx]
+            r = int((logits > t_logit).sum().item()) + 1
+            if best_rank is None or r < best_rank:
+                best_rank = r
+                best_tok, best_idx = tok, idx
+                best_logit = t_logit
+
+        rank = int(best_rank)
+        target_prob = float(torch.exp(best_logit - torch.logsumexp(logits, dim=-1)).item())
         # target_ppl = float(torch.exp(torch.logsumexp(logits, dim=-1) - target_logit).item())
 
-        print(f"\n{context_text} [{token_to_cli(target_token)}, {rank}]")
+        match_note = "" if best_tok == target_token else f" (matched {token_to_cli(best_tok)})"
+        print(f"\n{context_text} [{token_to_cli(target_token)}, {rank}]{match_note}")
         if target_pieces is not None and len(target_pieces) > 1:
             pieces_cli = [token_to_cli(index_to_token[int(i)]) for i in target_pieces]
             print(f"Target tokens: {pieces_cli}")
