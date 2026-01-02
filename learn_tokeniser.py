@@ -86,28 +86,32 @@ def learn_encodings(token_counts, corpus_name):
     words = []
     word_counts = array("Q") # "Q" -> unsigned 64-bit ints
     for token, count in token_counts.items():
-        word = array("H")
+        # the following is done in two steps to avoid the case of an odd number
+        # of bytes ("H" is two-byte ints)
+        word = array("H") # "H" -> unsigned 16-bit ints
         word.extend(token.encode("utf-8"))
         words.append(word)
         word_counts.append(int(count))
     del token_counts
+    # token_counts used to produce words and word_counts (words are pre-tokens)
 
-    pair_freqs = {}    # (a, b) -> total frequency (weighted by word count)
-    pair_to_words = {} # (a, b) -> word_ids (stale ids are fine)
-    for wid, word in enumerate(words):
-        count = word_counts[wid]
+    pair_freqs = {}    # weighted frequency of pair
+    pair_to_words = {} # word_ids containing the pair (a, b)
+    for word_idx, word in enumerate(words):
+        count = word_counts[word_idx]
         if len(word) < 2:
             continue
         pairs_in_word = set()
-        prev = word[0]
-        for cur in word[1:]:
-            pair = (prev, cur)
+        previous = word[0]
+        for current in word[1:]:
+            pair = (previous, current)
             pair_freqs[pair] = pair_freqs.get(pair, 0) + count
             pairs_in_word.add(pair)
-            prev = cur
+            previous = current
         for pair in pairs_in_word:
-            pair_to_words.setdefault(pair, array("I")).append(wid)
+            pair_to_words.setdefault(pair, array("I")).append(word_idx)
 
+    # heap ordered by pair frequencies
     heap = [(-freq, pair) for pair, freq in pair_freqs.items()]
     heapq.heapify(heap)
 
@@ -131,35 +135,34 @@ def learn_encodings(token_counts, corpus_name):
         encodings.append([list(pair), new_token])
 
         affected = pair_to_words.get(pair, ())
-        for wid in affected:
-            word = words[wid]
-            count = word_counts[wid]
+        delta = {}
+        for word_idx in affected:
+            word = words[word_idx]
+            count = word_counts[word_idx]
 
             old_pairs = pair_counts(word)
             new_word = merge_pair(word, pair, new_token)
             if new_word == word:
                 continue
 
-            # remove old pairs
-            for p, c in old_pairs.items():
-                new_freq = pair_freqs.get(p, 0) - c * count
-                if new_freq <= 0:
-                    pair_freqs.pop(p, None)
-                    pair_to_words.pop(p, None)
-                else:
-                    pair_freqs[p] = new_freq
-                    heapq.heappush(heap, (-new_freq, p))
-
-            # add new pairs
             new_pairs = pair_counts(new_word)
+            for p, c in old_pairs.items():
+                delta[p] = delta.get(p, 0) - c * count
             for p, c in new_pairs.items():
-                new_freq = pair_freqs.get(p, 0) + c * count
+                delta[p] = delta.get(p, 0) + c * count
+                if p not in old_pairs or p not in pair_to_words:
+                    pair_to_words.setdefault(p, array("I")).append(word_idx)
+
+            words[word_idx] = new_word
+
+        for p, d in delta.items():
+            new_freq = pair_freqs.get(p, 0) + d
+            if new_freq <= 0:
+                pair_freqs.pop(p, None)
+                pair_to_words.pop(p, None)
+            else:
                 pair_freqs[p] = new_freq
                 heapq.heappush(heap, (-new_freq, p))
-                if p not in old_pairs or p not in pair_to_words:
-                    pair_to_words.setdefault(p, array("I")).append(wid)
-
-            words[wid] = new_word
     
     # save encodings + token vocabulary (based on tokenised word counts)
     vocab_size = 256 + len(encodings)
@@ -188,31 +191,31 @@ def learn_encodings(token_counts, corpus_name):
     encodings_path = run_dir / "merges.pkl"
 
     # NOTE: The effort below is to make the vocab JSON file easy to skim.
-    index_width = len(str(vocab_size - 1))
-    count_width = len(str(max(token_id_counts)))
-    string_width = max(len(json.dumps(vocab[str(i)]["string"], ensure_ascii=False)) for i in range(vocab_size))
+    index_word_idxth = len(str(vocab_size - 1))
+    count_word_idxth = len(str(max(token_id_counts)))
+    string_word_idxth = max(len(json.dumps(vocab[str(i)]["string"], ensure_ascii=False)) for i in range(vocab_size))
     max_neg_prob = max(vocab[str(i)]["neg_prob"] for i in range(vocab_size))
-    neg_prob_width = len(f"{max_neg_prob:.10e}")
+    neg_prob_word_idxth = len(f"{max_neg_prob:.10e}")
     with open(vocab_path, "w") as f:
         f.write("{\n")
         for token_id in tqdm(range(vocab_size), desc="Writing JSON file"):
             key = str(token_id)
             v = vocab[key]
             string_json = json.dumps(v["string"], ensure_ascii=False)
-            string_json_pad = " " * (string_width - len(string_json))
+            string_json_pad = " " * (string_word_idxth - len(string_json))
             string_pad = " "
             neg_prob_str = f"{v['neg_prob']:.10e}"
-            neg_prob_pad = " " * (neg_prob_width - len(neg_prob_str))
+            neg_prob_pad = " " * (neg_prob_word_idxth - len(neg_prob_str))
             subdict = (
                 "{"
-                f'"index": {v["index"]:>{index_width}d}, '
-                f'"count": {v["count"]:>{count_width}d}, '
+                f'"index": {v["index"]:>{index_word_idxth}d}, '
+                f'"count": {v["count"]:>{count_word_idxth}d}, '
                 f'"string": {string_pad}{string_json}{string_json_pad}, '
                 f'"neg_prob": {neg_prob_pad}{neg_prob_str}'
                 "}"
             )
             comma = "," if token_id < vocab_size - 1 else ""
-            pad = " " * (index_width - len(key))
+            pad = " " * (index_word_idxth - len(key))
             f.write(f'    "{key}": {pad}{subdict}{comma}\n')
         f.write("}\n")
 
@@ -229,6 +232,9 @@ if __name__ == "__main__":
         raise SystemExit(1)
     corpus_name = sys.argv[1]
 
+    # NOTE: The folliowing produces or imports token_counts and then applies
+    # learn_encodings(). If corpus is large, it's worth saving token_counts
+    # in case learn_encodings() fails as it takes a ton of time to produce. 
     corpus_path = HERE / "data" / f"{corpus_name}.txt"
     streaming = corpus_path.stat().st_size >= stream_threshold_bytes
     if not streaming:
@@ -240,7 +246,6 @@ if __name__ == "__main__":
         if token_counts_path.exists():
             with open(token_counts_path, "rb") as f:
                 token_counts = pickle.load(f)
-            tqdm.write("loaded token counts")
         else:
             with open(corpus_path) as corpus:
                 token_counts = pre_token_counts_from_path(corpus)
@@ -251,3 +256,4 @@ if __name__ == "__main__":
     learn_encodings(token_counts, corpus_name)
     if streaming:
         token_counts_path.unlink(missing_ok=True)
+    
