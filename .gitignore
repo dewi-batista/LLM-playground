@@ -2,6 +2,7 @@
 
 *.ckpt
 *.npy
+*.pkl
 *.sh
 
 __pycache__/
