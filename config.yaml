@@ -2,6 +2,7 @@ transformer:
   batch_size: 400
   d_model: 768
   dropout: 0.1
+  early_stop_min_delta: 0.1
   eval_batches: 100
   eval_every: 500
   grad_accum_steps: 1

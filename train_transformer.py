@@ -82,6 +82,7 @@ cfg = config["transformer"]
 batch_size        = int(cfg["batch_size"])
 d_model           = int(cfg["d_model"])
 dropout           = float(cfg["dropout"])
+early_stop_delta  = float(cfg["early_stop_delta"])
 eval_batches      = int(cfg["eval_batches"])
 eval_every        = int(cfg["eval_every"])
 grad_accum_steps  = int(cfg["grad_accum_steps"])
@@ -332,10 +333,10 @@ def val_perplexity():
     mean_loss = total_loss / eval_batches
     return math.exp(mean_loss)
 
-pbar = tqdm(range(start_step, total_steps), desc="Train", unit=" batch", total=total_steps, initial=start_step)
-log_loss = 0.0
 last_recent_loss = None
+log_loss = 0.0
 log_steps = 0
+pbar = tqdm(range(start_step, total_steps), desc="Train", unit=" batch", total=total_steps, initial=start_step)
 for step in pbar:
 
     # update lr of all parmams: warmup -> cosine decay
@@ -384,8 +385,8 @@ for step in pbar:
     if (step + 1) % eval_every == 0 or (step + 1) == total_steps:
         val_ppl = val_perplexity()
         pbar.set_postfix(val_ppl=f"{val_ppl:.2f}")
-        is_best = (best_val_ppl > val_ppl)
         prev_best_val_ppl = best_val_ppl
+        is_best = (val_ppl < prev_best_val_ppl)
 
         model_to_save = model._orig_mod if hasattr(model, "_orig_mod") else model
         ckpt_obj = {
@@ -482,4 +483,9 @@ for step in pbar:
             },
         )
         write_val_ppl_svg(metrics_path, val_ppl_plot_path)
+        if early_stop_delta > 0 and is_best and prev_best_val_ppl < float("inf"):
+            delta = prev_best_val_ppl - val_ppl
+            if delta <= early_stop_delta:
+                tqdm.write(f"Early stopping invoked! val_ppl_delta={delta:.4f} <= {early_stop_delta}")
+                break
 tqdm.write("Training complete!")
