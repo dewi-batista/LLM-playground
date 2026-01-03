@@ -464,6 +464,17 @@ def main():
         if len(context_indeces) > seq_len:
             context_indeces = context_indeces[-seq_len:]
 
+        top10 = topk_next_tokens(
+            context_indeces,
+            E,
+            model,
+            final_lay_norm,
+            U,
+            pe,
+            index_to_token,
+            topk=10,
+        )
+
         indeces = list(context_indeces)
         generated = []
         for _ in range(next_tokens):
@@ -473,6 +484,7 @@ def main():
             generated.append(token_to_cli(index_to_token[next_idx]))
 
         print(f"\n{context_text} [{token_to_cli(target_token)}]")
+        print("top10:", top10)
         print(f"next{next_tokens}:", generated)
 
     if bench:
