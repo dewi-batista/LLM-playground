@@ -291,7 +291,7 @@ def main():
     gen_n = 0
     bench = False
     sample = False
-    temperature = 1.0
+    temperature = 0.5
     top_k = 0
     top_p = 1.0
     repetition_penalty = 1.1
@@ -598,8 +598,8 @@ def main():
             rank_part = str(int(best_rank))
         header = f"\n{context_text} [{token_to_cli(target_token)}, {rank_part}]"
         print(header)
-        print("top10:", top10)
-        print(f"next{next_tokens}:", generated)
+        print(top10)
+        print(generated)
 
     if bench:
         if gen_n > 0:
