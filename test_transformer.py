@@ -198,9 +198,6 @@ def choose_next_token(
     prev_tokens: list[int],
     *,
     sample: bool,
-    temperature: float,
-    top_k: int,
-    top_p: float,
     repetition_penalty: float,
     no_repeat_ngram: int,
 ) -> int:
@@ -228,26 +225,6 @@ def choose_next_token(
     if not sample:
         return int(torch.argmax(logits).item())
 
-    if temperature and temperature != 1.0:
-        logits = logits / float(temperature)
-
-    if top_k and top_k > 0:
-        k = min(int(top_k), logits.numel())
-        cutoff = torch.topk(logits, k=k).values[-1]
-        logits = torch.where(logits < cutoff, torch.full_like(logits, -float("inf")), logits)
-
-    if top_p and top_p < 1.0:
-        sorted_logits, sorted_idx = torch.sort(logits, descending=True)
-        sorted_probs = torch.softmax(sorted_logits, dim=-1)
-        cum_probs = torch.cumsum(sorted_probs, dim=-1)
-
-        remove = cum_probs > float(top_p)
-        remove[0] = False  # keep at least 1
-        sorted_logits[remove] = -float("inf")
-
-        logits = torch.full_like(logits, -float("inf"))
-        logits.scatter_(0, sorted_idx, sorted_logits)
-
     probs = torch.softmax(logits, dim=-1)
     return int(torch.multinomial(probs, num_samples=1).item())
 
@@ -270,9 +247,7 @@ def topk_next_tokens(prompt_indeces, E, model, final_lay_norm, U, pe, index_to_t
 def main():
     if len(sys.argv) >= 2 and sys.argv[1] in {"-h", "--help"}:
         print(f"usage: python {Path(__file__).name} <language> <vocab_timestamp> <model_number> [prompt...]")
-        print(f"   or: python {Path(__file__).name} <language> <vocab_timestamp> <model_number> --gen <n> [prompt...]")
         print(f"   or: python {Path(__file__).name} <language> <vocab_timestamp> <model_number> --bench")
-        print("\ndecoding flags (optional): --sample --temp 1.0 --top_k 0 --top_p 1.0 --rep_penalty 1.1 --no_repeat_ngram 3")
         raise SystemExit(0)
 
     if len(sys.argv) < 4:
@@ -288,52 +263,16 @@ def main():
     model_number = int(model_number)
 
     # NOTE: no argparse on purpose (trying to keep it minimal + readable)
-    gen_n = 0
     bench = False
-    sample = False
-    temperature = 1.0
-    top_k = 0
-    top_p = 1.0
+    if len(sys.argv) >= 5 and sys.argv[4] == "--bench":
+        bench = True
+        prompt_args = sys.argv[5:]
+    else:
+        prompt_args = sys.argv[4:]
+
+    # NOTE: keep these hardcoded for now; the goal is readability, not CLI flexibility.
     repetition_penalty = 1.1
     no_repeat_ngram = 3
-    prompt_args = []
-    args = sys.argv[4:]
-    i = 0
-    while i < len(args):
-        if args[i] == "--gen":
-            gen_n = int(args[i + 1])
-            i += 2
-            continue
-        if args[i] == "--bench":
-            bench = True
-            i += 1
-            continue
-        if args[i] == "--sample":
-            sample = True
-            i += 1
-            continue
-        if args[i] == "--temp":
-            temperature = float(args[i + 1])
-            i += 2
-            continue
-        if args[i] == "--top_k":
-            top_k = int(args[i + 1])
-            i += 2
-            continue
-        if args[i] == "--top_p":
-            top_p = float(args[i + 1])
-            i += 2
-            continue
-        if args[i] == "--rep_penalty":
-            repetition_penalty = float(args[i + 1])
-            i += 2
-            continue
-        if args[i] == "--no_repeat_ngram":
-            no_repeat_ngram = int(args[i + 1])
-            i += 2
-            continue
-        prompt_args.append(args[i])
-        i += 1
 
     device = torch.device("cuda") if torch.cuda.is_available() else torch.device("cpu")
 
@@ -448,24 +387,20 @@ def main():
             topk=10,
         )
         print("top10:", topk)
-
-        if gen_n > 0:
-            indeces = list(prompt_indeces)
-            for _ in range(gen_n):
-                logits = next_token_logits(indeces[-seq_len:], E, model, final_lay_norm, U, pe)
-                next_idx = choose_next_token(
-                    logits,
-                    indeces[-seq_len:],
-                    sample=sample,
-                    temperature=temperature,
-                    top_k=top_k,
-                    top_p=top_p,
-                    repetition_penalty=repetition_penalty,
-                    no_repeat_ngram=no_repeat_ngram,
-                )
-                indeces.append(next_idx)
-            text_out = "".join(index_to_token[i] for i in indeces)
-            print("\n---\n" + text_out + "\n---")
+        indeces = list(prompt_indeces)
+        generated = []
+        for _ in range(BENCH_NEXT_TOKENS):
+            logits = next_token_logits(indeces[-seq_len:], E, model, final_lay_norm, U, pe)
+            next_idx = choose_next_token(
+                logits,
+                indeces[-seq_len:],
+                sample=False,
+                repetition_penalty=repetition_penalty,
+                no_repeat_ngram=no_repeat_ngram,
+            )
+            indeces.append(next_idx)
+            generated.append(token_to_cli(index_to_token[next_idx]))
+        print(f"next{BENCH_NEXT_TOKENS}:", generated)
 
     def eval_holdout(prompt: str):
         pre_tokens = list(iter_pre_tokens(prompt))
@@ -533,6 +468,20 @@ def main():
             pieces_cli = [token_to_cli(index_to_token[int(i)]) for i in target_pieces]
             print(f"Target tokens: {pieces_cli}")
         print(top10)
+        indeces = list(context_indeces)
+        generated = []
+        for _ in range(BENCH_NEXT_TOKENS):
+            logits = next_token_logits(indeces[-seq_len:], E, model, final_lay_norm, U, pe)
+            next_idx = choose_next_token(
+                logits,
+                indeces[-seq_len:],
+                sample=False,
+                repetition_penalty=repetition_penalty,
+                no_repeat_ngram=no_repeat_ngram,
+            )
+            indeces.append(next_idx)
+            generated.append(token_to_cli(index_to_token[next_idx]))
+        print(f"next{BENCH_NEXT_TOKENS}:", generated)
 
     def eval_bench(prompt: str, next_tokens: int = BENCH_NEXT_TOKENS):
         pre_tokens = list(iter_pre_tokens(prompt))
@@ -582,10 +531,7 @@ def main():
             next_idx = choose_next_token(
                 logits,
                 indeces[-seq_len:],
-                sample=sample,
-                temperature=temperature,
-                top_k=top_k,
-                top_p=top_p,
+                sample=True,
                 repetition_penalty=repetition_penalty,
                 no_repeat_ngram=no_repeat_ngram,
             )
@@ -602,8 +548,8 @@ def main():
         print(f"next{next_tokens}:", generated)
 
     if bench:
-        if gen_n > 0:
-            print("ERROR: --bench and --gen are mutually exclusive")
+        if prompt_args:
+            print("ERROR: --bench does not take a prompt")
             raise SystemExit(1)
         for i, s in enumerate(BENCH_SENTENCES):
             # print(f"\n=== {i + 1}/{len(BENCH_SENTENCES)} ===")
@@ -613,10 +559,6 @@ def main():
 
     if prompt_args:
         prompt = " ".join(prompt_args)
-        if gen_n > 0:
-            run_once(prompt)
-            raise SystemExit(0)
-
         eval_holdout(prompt)
         raise SystemExit(0)
 
