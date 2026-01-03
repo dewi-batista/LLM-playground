@@ -25,6 +25,7 @@ BENCH_SENTENCES = [
     "Machine learning is a field of artificial intelligence",
     "New York is a city in the United States",
     "London is a city in the United Kingdom",
+    "London is a city in England",
     "My favourite basketballer is Michael Jordan",
     "I like to drink coffee in the morning",
 ]
