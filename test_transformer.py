@@ -193,6 +193,65 @@ def target_variants(token: str) -> list[str]:
     return out
 
 
+def choose_next_token(
+    logits: torch.Tensor,
+    prev_tokens: list[int],
+    *,
+    sample: bool,
+    temperature: float,
+    top_k: int,
+    top_p: float,
+    repetition_penalty: float,
+    no_repeat_ngram: int,
+) -> int:
+    logits = logits.clone()
+
+    if repetition_penalty and repetition_penalty != 1.0 and prev_tokens:
+        t = torch.as_tensor(list(set(prev_tokens)), device=logits.device)
+        v = logits[t]
+        logits[t] = torch.where(v > 0, v / repetition_penalty, v * repetition_penalty)
+
+    if no_repeat_ngram and no_repeat_ngram > 0 and len(prev_tokens) >= (no_repeat_ngram - 1):
+        n = int(no_repeat_ngram)
+        seen = {}
+        for i in range(len(prev_tokens) - n + 1):
+            prefix = tuple(prev_tokens[i : i + n - 1])
+            nxt = prev_tokens[i + n - 1]
+            if prefix in seen:
+                seen[prefix].add(nxt)
+            else:
+                seen[prefix] = {nxt}
+        banned = seen.get(tuple(prev_tokens[-(n - 1) :]), set())
+        if banned:
+            logits[list(banned)] = -float("inf")
+
+    if not sample:
+        return int(torch.argmax(logits).item())
+
+    if temperature and temperature != 1.0:
+        logits = logits / float(temperature)
+
+    if top_k and top_k > 0:
+        k = min(int(top_k), logits.numel())
+        cutoff = torch.topk(logits, k=k).values[-1]
+        logits = torch.where(logits < cutoff, torch.full_like(logits, -float("inf")), logits)
+
+    if top_p and top_p < 1.0:
+        sorted_logits, sorted_idx = torch.sort(logits, descending=True)
+        sorted_probs = torch.softmax(sorted_logits, dim=-1)
+        cum_probs = torch.cumsum(sorted_probs, dim=-1)
+
+        remove = cum_probs > float(top_p)
+        remove[0] = False  # keep at least 1
+        sorted_logits[remove] = -float("inf")
+
+        logits = torch.full_like(logits, -float("inf"))
+        logits.scatter_(0, sorted_idx, sorted_logits)
+
+    probs = torch.softmax(logits, dim=-1)
+    return int(torch.multinomial(probs, num_samples=1).item())
+
+
 @torch.no_grad()
 def next_token_logits(prompt_indeces, E, model, final_lay_norm, U, pe):
     x = torch.as_tensor(prompt_indeces, dtype=torch.long, device=E.weight.device).unsqueeze(0)  # (1, T)
@@ -213,6 +272,7 @@ def main():
         print(f"usage: python {Path(__file__).name} <language> <vocab_timestamp> <model_number> [prompt...]")
         print(f"   or: python {Path(__file__).name} <language> <vocab_timestamp> <model_number> --gen <n> [prompt...]")
         print(f"   or: python {Path(__file__).name} <language> <vocab_timestamp> <model_number> --bench")
+        print("\ndecoding flags (optional): --sample --temp 1.0 --top_k 0 --top_p 1.0 --rep_penalty 1.1 --no_repeat_ngram 3")
         raise SystemExit(0)
 
     if len(sys.argv) < 4:
@@ -230,6 +290,12 @@ def main():
     # NOTE: no argparse on purpose (trying to keep it minimal + readable)
     gen_n = 0
     bench = False
+    sample = False
+    temperature = 1.0
+    top_k = 0
+    top_p = 1.0
+    repetition_penalty = 1.1
+    no_repeat_ngram = 3
     prompt_args = []
     args = sys.argv[4:]
     i = 0
@@ -241,6 +307,30 @@ def main():
         if args[i] == "--bench":
             bench = True
             i += 1
+            continue
+        if args[i] == "--sample":
+            sample = True
+            i += 1
+            continue
+        if args[i] == "--temp":
+            temperature = float(args[i + 1])
+            i += 2
+            continue
+        if args[i] == "--top_k":
+            top_k = int(args[i + 1])
+            i += 2
+            continue
+        if args[i] == "--top_p":
+            top_p = float(args[i + 1])
+            i += 2
+            continue
+        if args[i] == "--rep_penalty":
+            repetition_penalty = float(args[i + 1])
+            i += 2
+            continue
+        if args[i] == "--no_repeat_ngram":
+            no_repeat_ngram = int(args[i + 1])
+            i += 2
             continue
         prompt_args.append(args[i])
         i += 1
@@ -362,20 +452,17 @@ def main():
         if gen_n > 0:
             indeces = list(prompt_indeces)
             for _ in range(gen_n):
-                top1 = topk_next_tokens(
+                logits = next_token_logits(indeces[-seq_len:], E, model, final_lay_norm, U, pe)
+                next_idx = choose_next_token(
+                    logits,
                     indeces[-seq_len:],
-                    E,
-                    model,
-                    final_lay_norm,
-                    U,
-                    pe,
-                    index_to_token,
-                    topk=1,
+                    sample=sample,
+                    temperature=temperature,
+                    top_k=top_k,
+                    top_p=top_p,
+                    repetition_penalty=repetition_penalty,
+                    no_repeat_ngram=no_repeat_ngram,
                 )
-                next_token_cli, _ = top1[0]
-                next_idx = token_to_index_cli.get(next_token_cli)
-                if next_idx is None:
-                    break
                 indeces.append(next_idx)
             text_out = "".join(index_to_token[i] for i in indeces)
             print("\n---\n" + text_out + "\n---")
@@ -492,7 +579,16 @@ def main():
         generated = []
         for _ in range(next_tokens):
             logits = next_token_logits(indeces[-seq_len:], E, model, final_lay_norm, U, pe)
-            next_idx = int(torch.argmax(logits).item())
+            next_idx = choose_next_token(
+                logits,
+                indeces[-seq_len:],
+                sample=sample,
+                temperature=temperature,
+                top_k=top_k,
+                top_p=top_p,
+                repetition_penalty=repetition_penalty,
+                no_repeat_ngram=no_repeat_ngram,
+            )
             indeces.append(next_idx)
             generated.append(token_to_cli(index_to_token[next_idx]))
 
