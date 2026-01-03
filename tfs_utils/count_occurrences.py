@@ -94,9 +94,8 @@ if __name__ == "__main__":
     if len(sys.argv) < 2 or sys.argv[1] in {"-h", "--help"}:
         print(
             f"usage: python {Path(__file__).name} <words...> [--path file] [--show 5] [--context 80] [--cooccur]\n"
-            "\nexamples:\n"
-            f"\nphrase search: python {Path(__file__).name} New York --path {DEFAULT_PATH.relative_to(HERE)} --show 5\n"
-            f"\nco-occurrence search: python {Path(__file__).name} New York United States --cooccur --path {DEFAULT_PATH.relative_to(HERE)} --context 80 --show 5\n"
+            f"\nsingle phrase: python {Path(__file__).name} New York --path {DEFAULT_PATH.relative_to(HERE)} --show 5\n"
+            f"co-occurrence: python {Path(__file__).name} New York United States --cooccur --path {DEFAULT_PATH.relative_to(HERE)} --context 80 --show 5"
         )
         raise SystemExit(1)
 

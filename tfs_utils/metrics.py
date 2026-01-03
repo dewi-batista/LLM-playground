@@ -1,23 +1,18 @@
-import csv
-import os
 from pathlib import Path
-
 from tqdm import tqdm
 
+import csv
+import os
 
 METRICS_FIELDS = [
     "global_step",
     "seen_tokens",
     "lr",
     "recent_loss",
-    "step_ms",
-    "tok_s_M",
-    "vram_gb",
     "val_ppl",
     "best_val_ppl",
-    "saved",
+    "patience_count",
 ]
-
 
 def _fmt_count(n: int) -> str:
     n = int(n)
@@ -46,15 +41,9 @@ def _fmt_metrics_row(row: dict) -> dict:
             out[k] = f"{float(v):.4g}"
         elif k == "recent_loss":
             out[k] = f"{float(v):.4f}"
-        elif k == "step_ms":
-            out[k] = f"{float(v):.1f}"
-        elif k == "tok_s_M":
-            out[k] = f"{float(v):.3f}"
-        elif k == "vram_gb":
-            out[k] = f"{float(v):.1f}"
         elif k in {"val_ppl", "best_val_ppl"}:
             out[k] = f"{float(v):.2f}"
-        elif k == "saved":
+        elif k == "patience_count":
             out[k] = str(int(v))
         else:
             out[k] = str(v)

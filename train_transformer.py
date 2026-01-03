@@ -380,7 +380,6 @@ for step in pbar:
         last_recent_loss = log_loss / log_steps
         pbar.set_postfix(
             recent_loss=f"{last_recent_loss:.4f}",
-            lr=f"{current_lr:.2e}",
         )
         log_loss = 0.0
         log_steps = 0
@@ -483,7 +482,7 @@ for step in pbar:
                 "recent_loss": "" if last_recent_loss is None else last_recent_loss,
                 "val_ppl": val_ppl,
                 "best_val_ppl": best_val_ppl,
-                "saved": int(saved),
+                "patience_count": no_improve_evals,
             },
         )
         write_val_ppl_svg(metrics_path, val_ppl_plot_path)
@@ -499,4 +498,4 @@ for step in pbar:
         elif 0 < improvement <= early_stop_delta:
             early_stopped = True
             break
-tqdm.write("Training stopped early!" if early_stopped else "Training complete!")
+tqdm.write("Training complete! (stopped early)" if early_stopped else "Training complete!")

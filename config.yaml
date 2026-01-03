@@ -1,5 +1,5 @@
 transformer:
-  batch_size: 400
+  batch_size: 375
   d_model: 768
   dropout: 0.1
   early_stop_delta: 0.1
