@@ -264,6 +264,7 @@ def main():
 
     # NOTE: no argparse on purpose (trying to keep it minimal + readable)
     bench = False
+<<<<<<< HEAD
     if len(sys.argv) >= 5 and sys.argv[4] == "--bench":
         bench = True
         prompt_args = sys.argv[5:]
@@ -271,6 +272,12 @@ def main():
         prompt_args = sys.argv[4:]
 
     # NOTE: keep these hardcoded for now; the goal is readability, not CLI flexibility.
+=======
+    sample = False
+    temperature = 0.5
+    top_k = 0
+    top_p = 1.0
+>>>>>>> 0f0a820a1e37ea6ff041249fe61a5564037f7b93
     repetition_penalty = 1.1
     no_repeat_ngram = 3
 
@@ -544,8 +551,8 @@ def main():
             rank_part = str(int(best_rank))
         header = f"\n{context_text} [{token_to_cli(target_token)}, {rank_part}]"
         print(header)
-        print("top10:", top10)
-        print(f"next{next_tokens}:", generated)
+        print(top10)
+        print(generated)
 
     if bench:
         if prompt_args:
