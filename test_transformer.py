@@ -161,6 +161,7 @@ def encode_pre_tokens_to_indices(pre_tokens, bpe_encode, token_id_to_index):
     return idx.tolist()
 
 PUNCT_SUFFIXES = [",", ".", ":", ";", "!", "?"]
+PUNCT_PREFIXES = ["-"]
 
 def target_variants(token: str) -> list[str]:
     base = token.rstrip("".join(PUNCT_SUFFIXES))
@@ -170,6 +171,17 @@ def target_variants(token: str) -> list[str]:
     for p in PUNCT_SUFFIXES:
         if base:
             variants.append(base + p)
+    stripped = base.lstrip(" ")
+    leading = base[: len(base) - len(stripped)]
+    for p in PUNCT_PREFIXES:
+        if stripped:
+            variants.append(p + stripped)
+            if leading:
+                variants.append(leading + p + stripped)
+            for s in PUNCT_SUFFIXES:
+                variants.append(p + stripped + s)
+                if leading:
+                    variants.append(leading + p + stripped + s)
     seen = set()
     out = []
     for v in variants:
