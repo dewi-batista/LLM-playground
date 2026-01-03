@@ -38,6 +38,8 @@ BENCH_SENTENCES = [
     "London is a city in England",
     "My favourite basketballer is Michael Jordan",
     "I like to drink coffee in the morning",
+    "The patron saint of Wales was Dewi",
+    "The patron saint of Wales was Dewi Sant",
 ]
 NEXT_TOKENS = 5
 
