@@ -165,8 +165,8 @@ def main():
 
         rank_part = str(int(best_rank)) if best_rank is not None else "<not in vocab after pruning>"
         print(f"\n{context_text} [{token_to_cli(target_token)}, {rank_part}]")
-        print("top10:", top10)
-        print(f"next{NEXT_TOKENS}:", generated)
+        print(top10)
+        print(generated)
 
 
 if __name__ == "__main__":
