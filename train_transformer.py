@@ -15,6 +15,7 @@ import os
 import pickle
 import random
 import sys
+import time
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -304,34 +305,26 @@ offsets = np.arange(seq_len, dtype=np.int64)
 
 # eval NLL on random batches (dropout off)
 def eval_nll(token_ids):
-    model.eval()
-    E.eval()
-    final_lay_norm.eval()
-    U.eval()
-    dropout_embed.eval()
-    with torch.no_grad():
-        total_loss = 0.0
-        for _ in range(eval_batches):
-            window_start_idx = np.random.randint(0, len(token_ids) - seq_len - 1, size=batch_size)
-            context_window = token_ids[window_start_idx[:, None] + offsets[None, :]]
-            targets = token_ids[window_start_idx[:, None] + offsets[None, :] + 1]
+    total_loss = 0.0
+    for _ in range(eval_batches):
+        window_start_idx = np.random.randint(0, len(token_ids) - seq_len - 1, size=batch_size)
+        context_window = token_ids[window_start_idx[:, None] + offsets[None, :]]
+        targets = token_ids[window_start_idx[:, None] + offsets[None, :] + 1]
 
-            context_window = torch.as_tensor(context_window, dtype=torch.long, device=device)
-            targets = torch.as_tensor(targets, dtype=torch.long, device=device)
+        context_window = torch.as_tensor(context_window, dtype=torch.long, device=device)
+        targets = torch.as_tensor(targets, dtype=torch.long, device=device)
 
-            with torch.autocast(device_type=device.type, dtype=amp_dtype, enabled=amp_enabled):
-                X = dropout_embed(E(context_window) + pe)
-                logits = U(final_lay_norm(model(X)))
-                loss = F.cross_entropy(logits.reshape(-1, V), targets.reshape(-1))
-            total_loss += float(loss)
-
-    model.train()
-    E.train()
-    final_lay_norm.train()
-    U.train()
-    dropout_embed.train()
+        with torch.autocast(device_type=device.type, dtype=amp_dtype, enabled=amp_enabled):
+            X = dropout_embed(E(context_window) + pe)
+            logits = U(final_lay_norm(model(X)))
+            loss = F.cross_entropy(logits.reshape(-1, V), targets.reshape(-1))
+        total_loss += float(loss)
 
     return total_loss / eval_batches
+
+def _sync_cuda():
+    if device.type == "cuda":
+        torch.cuda.synchronize()
 
 train_nll = None
 val_nll = None
@@ -372,57 +365,79 @@ for step in pbar:
 
     # checkpoint via validation perplexity
     if (step + 1) % eval_every == 0 or (step + 1) == total_steps:
-        train_nll = eval_nll(train_token_ids)
-        val_nll = eval_nll(val_token_ids)
+        E.eval()
+        model.eval()
+        final_lay_norm.eval()
+        U.eval()
+        dropout_embed.eval()
+
+        with torch.inference_mode():
+            _sync_cuda()
+            t0 = time.perf_counter()
+            train_nll = eval_nll(train_token_ids)
+            _sync_cuda()
+            train_eval_s = time.perf_counter() - t0
+
+            _sync_cuda()
+            t0 = time.perf_counter()
+            val_nll = eval_nll(val_token_ids)
+            _sync_cuda()
+            val_eval_s = time.perf_counter() - t0
+
+        E.train()
+        model.train()
+        final_lay_norm.train()
+        U.train()
+        dropout_embed.train()
+
         val_ppl = math.exp(val_nll)
-        pbar.set_postfix(train_nll=f"{train_nll:.4f}", val_nll=f"{val_nll:.4f}")
         prev_best_val_ppl = best_val_ppl
         is_best = (val_ppl < prev_best_val_ppl)
 
-        model_to_save = model._orig_mod if hasattr(model, "_orig_mod") else model
-        ckpt_obj = {
-            "E_state_dict": E.state_dict(),
-            "model_state_dict": model_to_save.state_dict(),
-            "final_lay_norm_state_dict": final_lay_norm.state_dict(),
-            "U_state_dict": U.state_dict(),
-            "optimizer_state_dict": optimizer.state_dict(),
-            "vocab_size": V,
-            "min_count": min_count,
-            "index_to_token": index_to_token,
-            "d_model": d_model,
-            "num_heads": num_heads,
-            "num_blocks": num_blocks,
-            "d_ff": d_ff,
-            "seq_len": seq_len,
-            "batch_size": batch_size,
-            "dropout": dropout,
-            "lr": lr,
-            "weight_decay": weight_decay,
-            "grad_clip": grad_clip,
-            "warmup_frac": warmup_frac,
-            "warmup_steps": warmup_steps,
-            "total_steps": total_steps,
-            "grad_accum_steps": grad_accum_steps,
-            "train_tokens": train_tokens,
-            "tokens_per_step": tokens_per_step,
-            "val_frac": val_frac,
-            "eval_every": eval_every,
-            "eval_batches": eval_batches,
-            "best_val_ppl": val_ppl,
-            "val_ppl": val_ppl,
-            "bpe_vocab_path": str(vocab_path.relative_to(HERE)),
-            "bpe_encodings_path": str(encodings_path.relative_to(HERE)),
-            "token_ids_path": str(token_ids_path.relative_to(HERE)),
-            "global_step": step + 1,
-            "rng_state_py": random.getstate(),
-            "rng_state_np": np.random.get_state(),
-            "rng_state_torch": torch.get_rng_state(),
-            "rng_state_cuda": torch.cuda.get_rng_state_all() if torch.cuda.is_available() else None,
-        }
-
         # safely save checkpoint, update metadata and update metrics
+        log_t0 = time.perf_counter()
         saved = False
         if is_best:
+            model_to_save = model._orig_mod if hasattr(model, "_orig_mod") else model
+            ckpt_obj = {
+                "E_state_dict": E.state_dict(),
+                "model_state_dict": model_to_save.state_dict(),
+                "final_lay_norm_state_dict": final_lay_norm.state_dict(),
+                "U_state_dict": U.state_dict(),
+                "optimizer_state_dict": optimizer.state_dict(),
+                "vocab_size": V,
+                "min_count": min_count,
+                "index_to_token": index_to_token,
+                "d_model": d_model,
+                "num_heads": num_heads,
+                "num_blocks": num_blocks,
+                "d_ff": d_ff,
+                "seq_len": seq_len,
+                "batch_size": batch_size,
+                "dropout": dropout,
+                "lr": lr,
+                "weight_decay": weight_decay,
+                "grad_clip": grad_clip,
+                "warmup_frac": warmup_frac,
+                "warmup_steps": warmup_steps,
+                "total_steps": total_steps,
+                "grad_accum_steps": grad_accum_steps,
+                "train_tokens": train_tokens,
+                "tokens_per_step": tokens_per_step,
+                "val_frac": val_frac,
+                "eval_every": eval_every,
+                "eval_batches": eval_batches,
+                "best_val_ppl": val_ppl,
+                "val_ppl": val_ppl,
+                "bpe_vocab_path": str(vocab_path.relative_to(HERE)),
+                "bpe_encodings_path": str(encodings_path.relative_to(HERE)),
+                "token_ids_path": str(token_ids_path.relative_to(HERE)),
+                "global_step": step + 1,
+                "rng_state_py": random.getstate(),
+                "rng_state_np": np.random.get_state(),
+                "rng_state_torch": torch.get_rng_state(),
+                "rng_state_cuda": torch.cuda.get_rng_state_all() if torch.cuda.is_available() else None,
+            }
             ok = atomic_torch_save(ckpt_obj, checkpoint_path)
             if ok:
                 saved = True
@@ -468,12 +483,20 @@ for step in pbar:
                 "seen_tokens": int((step + 1) * tokens_per_step),
                 "lr": current_lr,
                 "recent_loss": train_nll,
+                "eval_s": train_eval_s + val_eval_s,
+                "log_s": time.perf_counter() - log_t0,
                 "val_ppl": val_ppl,
                 "best_val_ppl": best_val_ppl,
                 "patience_count": no_improve_evals,
             },
         )
         write_val_ppl_svg(metrics_path, val_ppl_plot_path)
+        pbar.set_postfix(
+            train_nll=f"{train_nll:.4f}",
+            val_nll=f"{val_nll:.4f}",
+            eval_s=f"{train_eval_s + val_eval_s:.1f}",
+            log_s=f"{time.perf_counter() - log_t0:.1f}",
+        )
         improvement = prev_best_val_ppl - val_ppl
         if early_stop_patience > 0:
             if improvement >= early_stop_delta:
