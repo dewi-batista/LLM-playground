@@ -16,8 +16,8 @@ MODELS_DIR = HERE / "models"
 
 BENCH_SENTENCES = [
     "The capital of France is Paris",
-    "Rome is the capital of Italy",
     "Paris is the capital of France",
+    "Rome is the capital of Italy",
     "The capital of Italy is Rome",
     "The quick brown fox jumps over the lazy dog",
     "The largest planet in the solar system is Jupiter",
@@ -25,7 +25,6 @@ BENCH_SENTENCES = [
     "Machine learning is a field of artificial intelligence",
     "New York is a city in the United States",
     "London is a city in the United Kingdom",
-    "The meaning of life is forty two",
     "My favourite basketballer is Michael Jordan",
     "I like to drink coffee in the morning",
 ]
