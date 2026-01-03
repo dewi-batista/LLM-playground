@@ -1,11 +1,52 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<svg xmlns="http://www.w3.org/2000/svg" width="900" height="420" viewBox="0 0 900 420">
+<svg xmlns="http://www.w3.org/2000/svg" width="960" height="480" viewBox="0 0 960 480">
+<style>
+  .mono { font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace; }
+  .small { font-size: 12px; fill: #444; }
+  .title { font-size: 16px; fill: #111; }
+</style>
 <rect x="0" y="0" width="100%" height="100%" fill="white"/>
-<text x="70" y="24" font-family="monospace" font-size="16">val_ppl (last=94.24, best=94.12, step=22_322)</text>
-<line x1="70" y1="40" x2="70" y2="365" stroke="#333" stroke-width="1"/>
-<line x1="70" y1="365" x2="880" y2="365" stroke="#333" stroke-width="1"/>
-<polyline fill="none" stroke="#1f77b4" stroke-width="2" points="70.0,54.8 108.0,217.9 146.0,278.9 184.0,307.3 222.0,319.6 259.9,330.7 297.9,336.3 316.9,337.4 335.9,338.9 354.9,340.5 373.9,341.5 392.9,342.1 411.9,344.0 430.9,344.4 449.9,345.5 468.9,345.8 487.9,346.1 506.9,347.0 525.9,347.2 544.9,347.6 563.9,348.1 582.9,348.4 601.8,348.6 620.8,348.8 639.8,349.0 658.8,349.3 677.8,349.5 696.8,349.7 715.8,349.6 734.8,349.8 753.8,349.9 772.8,350.0 791.8,350.2 810.8,350.2 829.8,350.2 848.8,350.2 867.8,350.2 880.0,350.2"/>
-<polyline fill="none" stroke="#ff7f0e" stroke-width="2" points="70.0,54.8 108.0,217.9 146.0,278.9 184.0,307.3 222.0,319.6 259.9,330.7 297.9,336.3 316.9,337.4 335.9,338.9 354.9,340.5 373.9,341.5 392.9,342.1 411.9,344.0 430.9,344.4 449.9,345.5 468.9,345.8 487.9,346.1 506.9,347.0 525.9,347.2 544.9,347.6 563.9,348.1 582.9,348.4 601.8,348.6 620.8,348.8 639.8,349.0 658.8,349.3 677.8,349.5 696.8,349.7 715.8,349.7 734.8,349.8 753.8,349.9 772.8,350.0 791.8,350.2 810.8,350.2 829.8,350.2 848.8,350.2 867.8,350.2 880.0,350.2"/>
-<text x="70" y="402" font-family="monospace" font-size="12" fill="#555">steps: 1_000 → 22_322</text>
-<text x="70" y="416" font-family="monospace" font-size="12" fill="#555">ppl: -3.18 → 2137.35 (orange=best-so-far)</text>
+<text class="mono title" x="80" y="28">loss (nll): train=4.592  val=4.546  best_val=4.545   (ppl=94.24, step=22_322)</text>
+<line x1="80" y1="415.0" x2="880" y2="415.0" stroke="#eee" stroke-width="1"/>
+<text class="mono small" x="70" y="419.0" text-anchor="end">4.329</text>
+<text class="mono small" x="890" y="419.0" text-anchor="start">75.89</text>
+<line x1="80" y1="343.0" x2="880" y2="343.0" stroke="#eee" stroke-width="1"/>
+<text class="mono small" x="70" y="347.0" text-anchor="end">5.031</text>
+<text class="mono small" x="890" y="347.0" text-anchor="start">153.0</text>
+<line x1="80" y1="271.0" x2="880" y2="271.0" stroke="#eee" stroke-width="1"/>
+<text class="mono small" x="70" y="275.0" text-anchor="end">5.732</text>
+<text class="mono small" x="890" y="275.0" text-anchor="start">308.6</text>
+<line x1="80" y1="199.0" x2="880" y2="199.0" stroke="#eee" stroke-width="1"/>
+<text class="mono small" x="70" y="203.0" text-anchor="end">6.433</text>
+<text class="mono small" x="890" y="203.0" text-anchor="start">622.2</text>
+<line x1="80" y1="127.0" x2="880" y2="127.0" stroke="#eee" stroke-width="1"/>
+<text class="mono small" x="70" y="131.0" text-anchor="end">7.135</text>
+<text class="mono small" x="890" y="131.0" text-anchor="start">1255</text>
+<line x1="80" y1="55.0" x2="880" y2="55.0" stroke="#eee" stroke-width="1"/>
+<text class="mono small" x="70" y="59.0" text-anchor="end">7.836</text>
+<text class="mono small" x="890" y="59.0" text-anchor="start">2530</text>
+<line x1="80.0" y1="55" x2="80.0" y2="415" stroke="#f5f5f5" stroke-width="1"/>
+<text class="mono small" x="80.0" y="437" text-anchor="middle">1_000</text>
+<line x1="240.0" y1="55" x2="240.0" y2="415" stroke="#f5f5f5" stroke-width="1"/>
+<text class="mono small" x="240.0" y="437" text-anchor="middle">5_264</text>
+<line x1="400.0" y1="55" x2="400.0" y2="415" stroke="#f5f5f5" stroke-width="1"/>
+<text class="mono small" x="400.0" y="437" text-anchor="middle">9_529</text>
+<line x1="560.0" y1="55" x2="560.0" y2="415" stroke="#f5f5f5" stroke-width="1"/>
+<text class="mono small" x="560.0" y="437" text-anchor="middle">13_793</text>
+<line x1="720.0" y1="55" x2="720.0" y2="415" stroke="#f5f5f5" stroke-width="1"/>
+<text class="mono small" x="720.0" y="437" text-anchor="middle">18_058</text>
+<line x1="880.0" y1="55" x2="880.0" y2="415" stroke="#f5f5f5" stroke-width="1"/>
+<text class="mono small" x="880.0" y="437" text-anchor="middle">22_322</text>
+<rect x="80" y="55" width="800" height="360" fill="none" stroke="#333" stroke-width="1"/>
+<text class="mono small" x="80" y="45">nll (left) / ppl (right)</text>
+<polyline fill="none" stroke="#1f77b4" stroke-width="2" points="80.0,101.9 117.5,152.7 155.0,209.6 192.6,250.7 230.1,280.5 267.6,303.5 305.1,321.4 323.9,326.6 342.6,332.5 361.4,337.7 380.2,344.1 398.9,348.2 417.7,352.2 436.4,355.6 455.2,359.4 474.0,362.7 492.7,365.3 511.5,368.7 530.2,369.9 549.0,372.3 567.8,373.9 586.5,375.5 605.3,377.7 624.0,379.3 642.8,380.9 661.6,381.7 680.3,383.2 699.1,384.2 717.8,384.6 736.6,385.8 755.4,385.6 774.1,385.7 792.9,387.3 811.6,387.2 830.4,387.5 849.2,386.7 867.9,386.9 880.0,388.0"/>
+<polyline fill="none" stroke="#d62728" stroke-width="2" points="80.0,77.1 117.5,153.9 155.0,209.2 192.6,250.5 230.1,275.4 267.6,304.6 305.1,323.2 323.9,327.2 342.6,332.9 361.4,339.5 380.2,344.1 398.9,346.9 417.7,355.6 436.4,357.5 455.2,363.4 474.0,365.0 492.7,366.8 511.5,372.1 530.2,373.0 549.0,375.3 567.8,378.5 586.5,380.3 605.3,381.6 624.0,383.4 642.8,384.5 661.6,386.7 680.3,387.7 699.1,389.0 717.8,388.8 736.6,390.0 755.4,390.9 774.1,391.3 792.9,392.7 811.6,392.4 830.4,392.7 849.2,392.9 867.9,392.7 880.0,392.8"/>
+<polyline fill="none" stroke="#ff7f0e" stroke-width="2" stroke-dasharray="6,4" points="80.0,77.1 117.5,153.9 155.0,209.2 192.6,250.5 230.1,275.4 267.6,304.6 305.1,323.2 323.9,327.2 342.6,332.9 361.4,339.5 380.2,344.1 398.9,346.9 417.7,355.6 436.4,357.5 455.2,363.4 474.0,365.0 492.7,366.8 511.5,372.1 530.2,373.0 549.0,375.3 567.8,378.5 586.5,380.3 605.3,381.6 624.0,383.4 642.8,384.5 661.6,386.7 680.3,387.7 699.1,389.0 717.8,389.0 736.6,390.0 755.4,390.9 774.1,391.3 792.9,392.7 811.6,392.7 830.4,392.7 849.2,392.9 867.9,392.9 880.0,392.9"/>
+<line x1="660" y1="73" x2="686" y2="73" stroke="#1f77b4" stroke-width="2"/>
+<text class="mono small" x="694" y="77">train_nll</text>
+<line x1="660" y1="91" x2="686" y2="91" stroke="#d62728" stroke-width="2"/>
+<text class="mono small" x="694" y="95">val_nll</text>
+<line x1="660" y1="109" x2="686" y2="109" stroke="#ff7f0e" stroke-width="2" stroke-dasharray="6,4"/>
+<text class="mono small" x="694" y="113">best_val_nll</text>
+<text class="mono small" x="80" y="462">steps: 1_000 → 22_322</text>
 </svg>
