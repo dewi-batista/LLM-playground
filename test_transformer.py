@@ -204,7 +204,7 @@ def topk_next_tokens(prompt_indeces, E, model, final_lay_norm, U, pe, index_to_t
     logits = next_token_logits(prompt_indeces, E, model, final_lay_norm, U, pe)
     probs = torch.softmax(logits, dim=-1)
     values, indices = torch.topk(probs, k=topk)
-    return [(token_to_cli(index_to_token[int(i)]), float(v)) for v, i in zip(values, indices)]
+    return [(token_to_cli(index_to_token[int(i)]), round(float(v), 2)) for v, i in zip(values, indices)]
 
 
 def main():
