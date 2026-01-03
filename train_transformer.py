@@ -88,7 +88,6 @@ eval_batches      = int(cfg["eval_batches"])
 eval_every        = int(cfg["eval_every"])
 grad_accum_steps  = int(cfg["grad_accum_steps"])
 grad_clip         = float(cfg["grad_clip"])
-log_every         = int(cfg["log_every"])
 lr                = float(cfg["lr"])
 min_count         = int(cfg["min_count"])
 num_blocks        = int(cfg["num_blocks"])
@@ -303,8 +302,8 @@ if compile_enabled:
 
 offsets = np.arange(seq_len, dtype=np.int64)
 
-# validation perplexity on random batches
-def val_perplexity():
+# eval NLL on random batches (dropout off)
+def eval_nll(token_ids):
     model.eval()
     E.eval()
     final_lay_norm.eval()
@@ -313,9 +312,9 @@ def val_perplexity():
     with torch.no_grad():
         total_loss = 0.0
         for _ in range(eval_batches):
-            window_start_idx = np.random.randint(0, len(val_token_ids) - seq_len - 1, size=batch_size)
-            context_window = val_token_ids[window_start_idx[:, None] + offsets[None, :]]
-            targets = val_token_ids[window_start_idx[:, None] + offsets[None, :] + 1]
+            window_start_idx = np.random.randint(0, len(token_ids) - seq_len - 1, size=batch_size)
+            context_window = token_ids[window_start_idx[:, None] + offsets[None, :]]
+            targets = token_ids[window_start_idx[:, None] + offsets[None, :] + 1]
 
             context_window = torch.as_tensor(context_window, dtype=torch.long, device=device)
             targets = torch.as_tensor(targets, dtype=torch.long, device=device)
@@ -332,12 +331,10 @@ def val_perplexity():
     U.train()
     dropout_embed.train()
 
-    mean_loss = total_loss / eval_batches
-    return math.exp(mean_loss)
+    return total_loss / eval_batches
 
-last_recent_loss = None
-log_loss = 0.0
-log_steps = 0
+train_nll = None
+val_nll = None
 no_improve_evals = 0
 early_stopped = False
 pbar = tqdm(range(start_step, total_steps), desc="Train", unit=" batch", total=total_steps, initial=start_step)
@@ -373,21 +370,12 @@ for step in pbar:
     torch.nn.utils.clip_grad_norm_(params, grad_clip)
     optimizer.step()
 
-    # log in progress bar
-    log_loss += step_loss / grad_accum_steps
-    log_steps += 1
-    if (step + 1) % log_every == 0:
-        last_recent_loss = log_loss / log_steps
-        pbar.set_postfix(
-            recent_loss=f"{last_recent_loss:.4f}",
-        )
-        log_loss = 0.0
-        log_steps = 0
-
     # checkpoint via validation perplexity
     if (step + 1) % eval_every == 0 or (step + 1) == total_steps:
-        val_ppl = val_perplexity()
-        pbar.set_postfix(val_ppl=f"{val_ppl:.2f}")
+        train_nll = eval_nll(train_token_ids)
+        val_nll = eval_nll(val_token_ids)
+        val_ppl = math.exp(val_nll)
+        pbar.set_postfix(train_nll=f"{train_nll:.4f}", val_nll=f"{val_nll:.4f}")
         prev_best_val_ppl = best_val_ppl
         is_best = (val_ppl < prev_best_val_ppl)
 
@@ -479,7 +467,7 @@ for step in pbar:
                 "global_step": step + 1,
                 "seen_tokens": int((step + 1) * tokens_per_step),
                 "lr": current_lr,
-                "recent_loss": "" if last_recent_loss is None else last_recent_loss,
+                "recent_loss": train_nll,
                 "val_ppl": val_ppl,
                 "best_val_ppl": best_val_ppl,
                 "patience_count": no_improve_evals,
