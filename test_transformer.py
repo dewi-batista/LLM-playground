@@ -29,6 +29,7 @@ BENCH_SENTENCES = [
     "My favourite basketballer is Michael Jordan",
     "I like to drink coffee in the morning",
 ]
+BENCH_NEXT_TOKENS = 5
 
 
 def iter_pre_tokens(sequence: str):
@@ -446,13 +447,53 @@ def main():
             print(f"Target tokens: {pieces_cli}")
         print(top10)
 
+    def eval_bench(prompt: str, next_tokens: int = BENCH_NEXT_TOKENS):
+        pre_tokens = list(iter_pre_tokens(prompt))
+        if len(pre_tokens) < 2:
+            run_once(prompt)
+            return
+
+        context_tokens = pre_tokens[:-1]
+        target_token = pre_tokens[-1]
+        context_text = "".join(context_tokens)
+
+        context_indeces = encode_pre_tokens_to_indices(context_tokens, bpe_encode, token_id_to_index)
+        if not context_indeces:
+            print("<no usable context tokens after pruning>")
+            return
+        if len(context_indeces) > seq_len:
+            context_indeces = context_indeces[-seq_len:]
+
+        top10 = topk_next_tokens(
+            context_indeces,
+            E,
+            model,
+            final_lay_norm,
+            U,
+            pe,
+            index_to_token,
+            topk=10,
+        )
+
+        indeces = list(context_indeces)
+        generated = []
+        for _ in range(next_tokens):
+            logits = next_token_logits(indeces[-seq_len:], E, model, final_lay_norm, U, pe)
+            next_idx = int(torch.argmax(logits).item())
+            indeces.append(next_idx)
+            generated.append(token_to_cli(index_to_token[next_idx]))
+
+        print(f"\n{context_text} [{token_to_cli(target_token)}]")
+        print("top10:", top10)
+        print(f"next{next_tokens}:", generated)
+
     if bench:
         if gen_n > 0:
             print("ERROR: --bench and --gen are mutually exclusive")
             raise SystemExit(1)
         for i, s in enumerate(BENCH_SENTENCES):
             # print(f"\n=== {i + 1}/{len(BENCH_SENTENCES)} ===")
-            eval_holdout(s)
+            eval_bench(s)
         print()
         raise SystemExit(0)
 
