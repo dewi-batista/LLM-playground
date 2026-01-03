@@ -18,8 +18,8 @@ MODELS_DIR.mkdir(parents=True, exist_ok=True)
 # tokenisation, we remove trailing whitespaces then split; "banana  orange" ->
 # ["banana", " orange"] in which the second has one starting whitespace.
 
-# hyperparams
-# NOTE: vocab_size_max must be <= 65_280 so token ids fit in uint16 ("H").
+# NOTE about vocab_size_max: It must be <= (2 ** 16 - 256) so that the token
+# IDs fit in uint16 ("H").
 vocab_size_max = 30_000
 stream_threshold_bytes = 512 * 1024**2 # 512 MB
 
