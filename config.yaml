@@ -4,8 +4,8 @@ transformer:
   dropout: 0.1
   early_stop_delta: 0.1
   early_stop_patience: 10
-  eval_batches: 50
-  eval_every: 100
+  eval_batches: 10 # 50
+  eval_every: 100 # 1000
   grad_accum_steps: 1
   grad_clip: 1.0
   lr: 2.5e-4
