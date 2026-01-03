@@ -3,14 +3,7 @@ from pathlib import Path
 import mmap
 import sys
 
-
-HERE = Path(__file__).resolve().parents[1]
-DEFAULT_PATH = HERE / "data" / "wiki103.txt"
-
-
-def count_and_positions_in_file(
-    path: Path, needle: bytes, show: int, chunk_size: int = 64 * 1024 * 1024
-) -> tuple[int, list[int]]:
+def count_and_positions_in_file(path: Path, needle: bytes, show: int, chunk_size: int = 64 * 1024 * 1024):
     tail_len = max(0, len(needle) - 1)
     count = 0
     positions = []
@@ -40,8 +33,7 @@ def count_and_positions_in_file(
 
     return count, positions
 
-
-def snippets_from_positions(path: Path, positions: list[int], sequence: str, context: int) -> list[str]:
+def snippets_from_positions(path: Path, positions: list[int], sequence: str, context: int):
     needle_len = len(sequence.encode("utf-8"))
     out = []
     with open(path, "rb") as f:
@@ -54,8 +46,7 @@ def snippets_from_positions(path: Path, positions: list[int], sequence: str, con
             out.append(s.replace(sequence, f"[{sequence}]"))
     return out
 
-
-def count_and_snippets_tokens_in_file(path: Path, tokens: list[str], show: int, context: int) -> tuple[int, list[str]]:
+def count_and_snippets_tokens_in_file(path: Path, tokens: list[str], show: int, context: int):
     if not tokens:
         return 0, []
     tokens_b = [t.encode("utf-8") for t in tokens]
@@ -95,150 +86,64 @@ def count_and_snippets_tokens_in_file(path: Path, tokens: list[str], show: int, 
 
     return count, snippets
 
+if __name__ == "__main__":
 
-def count_and_snippets_in_dataset(sequence: str, split: str, show: int, context: int) -> tuple[int, list[str]]:
-    from datasets import load_dataset
+    HERE = Path(__file__).resolve().parents[1]
+    DEFAULT_PATH = HERE / "data" / "wiki103.txt"
 
-    data = load_dataset("wikitext", "wikitext-103-v1", split=split)
-    count = 0
-    snippets = []
-    n = len(sequence)
-
-    for line in data["text"]:
-        if not line.strip():
-            continue
-        c = line.count(sequence)
-        if c:
-            count += c
-            if show and len(snippets) < show:
-                i = line.find(sequence)
-                left = max(0, i - context)
-                right = min(len(line), i + n + context)
-                s = line[left:right].replace("\n", " ")
-                if left > 0:
-                    s = "..." + s
-                if right < len(line):
-                    s = s + "..."
-                snippets.append(s.replace(sequence, f"[{sequence}]"))
-
-    return count, snippets
-
-
-def count_and_snippets_tokens_in_dataset(tokens: list[str], split: str, show: int, context: int) -> tuple[int, list[str]]:
-    from datasets import load_dataset
-
-    data = load_dataset("wikitext", "wikitext-103-v1", split=split)
-    count = 0
-    snippets = []
-
-    for line in data["text"]:
-        if not line.strip():
-            continue
-        if not all(t in line for t in tokens):
-            continue
-
-        count += 1
-        if show and len(snippets) < show:
-            positions = [(line.find(t), len(t)) for t in tokens]
-            first = min(i for i, _ in positions)
-            last = max(i + n for i, n in positions)
-            left = max(0, first - context)
-            right = min(len(line), last + context)
-            s = line[left:right].replace("\n", " ")
-            if left > 0:
-                s = "..." + s
-            if right < len(line):
-                s = s + "..."
-            for t in sorted(tokens, key=len, reverse=True):
-                s = s.replace(t, f"[{t}]")
-            snippets.append(s)
-
-    return count, snippets
-
-
-if len(sys.argv) < 2 or sys.argv[1] in {"-h", "--help"}:
-    print(
-        f"usage: python {Path(__file__).name} <words...> [--path file] [--dataset] [--split train] [--show 5] [--context 80] [--tokens]\n"
-        "\n"
-        "examples:\n"
-        f"  # phrase search in local file (default mode; words are joined with spaces)\n"
-        f"  python {Path(__file__).name} New York --path {DEFAULT_PATH.relative_to(HERE)} --show 5\n"
-        "\n"
-        "  # token co-occurrence search (each arg is its own token; max 5)\n"
-        f"  python {Path(__file__).name} New York United States --tokens --path {DEFAULT_PATH.relative_to(HERE)} --context 80 --show 5\n"
-        f"  python {Path(__file__).name} \"New York\" \"United States\" --tokens --path {DEFAULT_PATH.relative_to(HERE)}\n"
-        "\n"
-        "  # dataset mode (requires `datasets`; counts lines containing the phrase/tokens)\n"
-        f"  python {Path(__file__).name} New York --dataset --split train\n"
-    )
-    raise SystemExit(1)
-
-args = sys.argv[1:]
-path = DEFAULT_PATH
-use_dataset = False
-split = "train"
-show = 5
-context = 80
-tokens_mode = False
-
-seq_parts = []
-i = 0
-while i < len(args):
-    if args[i] == "--path":
-        path = Path(args[i + 1])
-        i += 2
-        continue
-    if args[i] == "--dataset":
-        use_dataset = True
-        i += 1
-        continue
-    if args[i] == "--split":
-        split = args[i + 1]
-        i += 2
-        continue
-    if args[i] == "--show":
-        show = int(args[i + 1])
-        i += 2
-        continue
-    if args[i] == "--context":
-        context = int(args[i + 1])
-        i += 2
-        continue
-    if args[i] == "--tokens":
-        tokens_mode = True
-        i += 1
-        continue
-    seq_parts.append(args[i])
-    i += 1
-
-if not seq_parts:
-    print(
-        f"usage: python {Path(__file__).name} <sequence...> [--path file] [--dataset] [--split train] [--show 5] [--context 80] [--tokens]"
-    )
-    raise SystemExit(1)
-
-if tokens_mode:
-    if len(seq_parts) > 5:
-        print("ERROR: --tokens supports max 5 tokens")
+    if len(sys.argv) < 2 or sys.argv[1] in {"-h", "--help"}:
+        print(
+            f"usage: python {Path(__file__).name} <words...> [--path file] [--show 5] [--context 80] [--cooccur]\n"
+            "\nexamples:\n"
+            f"\nphrase search: python {Path(__file__).name} New York --path {DEFAULT_PATH.relative_to(HERE)} --show 5\n"
+            f"\nco-occurrence search: python {Path(__file__).name} New York United States --cooccur --path {DEFAULT_PATH.relative_to(HERE)} --context 80 --show 5\n"
+        )
         raise SystemExit(1)
 
-    if use_dataset:
-        count, snippets = count_and_snippets_tokens_in_dataset(seq_parts, split=split, show=show, context=context)
-    else:
+    args = sys.argv[1:]
+    path = DEFAULT_PATH
+    show = 5
+    context = 80
+    tokens_mode = False
+
+    seq_parts = []
+    i = 0
+    while i < len(args):
+        if args[i] == "--path":
+            path = Path(args[i + 1])
+            i += 2
+            continue
+        if args[i] == "--show":
+            show = int(args[i + 1])
+            i += 2
+            continue
+        if args[i] == "--context":
+            context = int(args[i + 1])
+            i += 2
+            continue
+        if args[i] == "--cooccur":
+            tokens_mode = True
+            i += 1
+            continue
+        seq_parts.append(args[i]) # append tokens to search for
+        i += 1
+
+    if not seq_parts:
+        print(f"usage: python {Path(__file__).name} <sequence...> [--path file] [--show 5] [--context 80] [--cooccur]")
+        raise SystemExit(1)
+
+    if tokens_mode:
         if not path.is_absolute() and not path.exists():
             path = HERE / path
         count, snippets = count_and_snippets_tokens_in_file(path, seq_parts, show=show, context=context)
-else:
-    sequence = " ".join(seq_parts)
-    if use_dataset:
-        count, snippets = count_and_snippets_in_dataset(sequence, split=split, show=show, context=context)
     else:
+        sequence = " ".join(seq_parts)
         if not path.is_absolute() and not path.exists():
             path = HERE / path
         needle = sequence.encode("utf-8")
         count, positions = count_and_positions_in_file(path, needle, show=show)
         snippets = snippets_from_positions(path, positions, sequence, context=context)
 
-print(f"count: {count}")
-for i, s in enumerate(snippets):
-    print(f"{i + 1}: {s}")
+    print(f"count: {count}")
+    for i, s in enumerate(snippets):
+        print(f"{i + 1}: {s}")
