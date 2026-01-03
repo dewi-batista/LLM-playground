@@ -464,16 +464,29 @@ def main():
         if len(context_indeces) > seq_len:
             context_indeces = context_indeces[-seq_len:]
 
-        top10 = topk_next_tokens(
-            context_indeces,
-            E,
-            model,
-            final_lay_norm,
-            U,
-            pe,
-            index_to_token,
-            topk=10,
-        )
+        logits0 = next_token_logits(context_indeces, E, model, final_lay_norm, U, pe)
+        probs0 = torch.softmax(logits0, dim=-1)
+        values0, indices0 = torch.topk(probs0, k=10)
+        top10 = [(token_to_cli(index_to_token[int(i)]), round(float(v), 2)) for v, i in zip(values0, indices0)]
+
+        candidates = []
+        for tok in target_variants(target_token):
+            idx = token_str_to_index.get(tok)
+            if idx is None:
+                pieces = encode_pre_tokens_to_indices([tok], bpe_encode, token_id_to_index)
+                if not pieces:
+                    continue
+                idx = int(pieces[0])
+            candidates.append((tok, idx))
+
+        best_rank = None
+        best_tok = target_token
+        for tok, idx in candidates:
+            t_logit = logits0[idx]
+            r = int((logits0 > t_logit).sum().item()) + 1
+            if best_rank is None or r < best_rank:
+                best_rank = r
+                best_tok = tok
 
         indeces = list(context_indeces)
         generated = []
@@ -483,7 +496,14 @@ def main():
             indeces.append(next_idx)
             generated.append(token_to_cli(index_to_token[next_idx]))
 
-        print(f"\n{context_text} [{token_to_cli(target_token)}]")
+        if best_rank is None:
+            rank_part = "<not in vocab after pruning>"
+        else:
+            rank_part = str(int(best_rank))
+        header = f"\n{context_text} [{token_to_cli(target_token)}, {rank_part}]"
+        if best_tok != target_token and best_rank is not None:
+            header += f" (matched {token_to_cli(best_tok)})"
+        print(header)
         print("top10:", top10)
         print(f"next{next_tokens}:", generated)
 
