@@ -501,8 +501,6 @@ def main():
         else:
             rank_part = str(int(best_rank))
         header = f"\n{context_text} [{token_to_cli(target_token)}, {rank_part}]"
-        if best_tok != target_token and best_rank is not None:
-            header += f" (matched {token_to_cli(best_tok)})"
         print(header)
         print("top10:", top10)
         print(f"next{next_tokens}:", generated)
