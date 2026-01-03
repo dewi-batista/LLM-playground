@@ -16,9 +16,9 @@ MODELS_DIR = HERE / "models"
 
 BENCH_SENTENCES = [
     "The capital of France is Paris",
-    "The capital of Italy is Rome",
     "Paris is the capital of France",
     "Rome is the capital of Italy",
+    "The capital of Italy is Rome",
     "The quick brown fox jumps over the lazy dog",
     "The largest planet in the solar system is Jupiter",
     "The author of Hamlet is William Shakespeare",
@@ -562,9 +562,60 @@ def main():
         eval_holdout(prompt)
         raise SystemExit(0)
 
+    def count_prompt_tokens(text: str) -> int:
+        token_ids = []
+        for pre_tok in iter_pre_tokens(text):
+            token_ids.extend(bpe_encode(pre_tok))
+        if not token_ids:
+            return 0
+        token_ids = torch.as_tensor(token_ids, dtype=torch.long)
+        mapped = token_id_to_index[token_ids]
+        return int((mapped >= 0).sum().item())
+
+    def input_with_token_count() -> str:
+        if not (sys.stdin.isatty() and sys.stdout.isatty()):
+            return input(f"> 0/{seq_len} ").strip()
+
+        import select
+        import termios
+        import tty
+
+        fd = sys.stdin.fileno()
+        old = termios.tcgetattr(fd)
+        buf = ""
+        try:
+            tty.setraw(fd)
+            while True:
+                n = count_prompt_tokens(buf)
+                n_disp = min(n, seq_len)
+                plus = "+" if n > seq_len else ""
+                sys.stdout.write("\r\x1b[2K")
+                sys.stdout.write(f"> {n_disp}{plus}/{seq_len} {buf}")
+                sys.stdout.flush()
+
+                ch = sys.stdin.read(1)
+                if ch in ("\r", "\n"):
+                    sys.stdout.write("\n")
+                    return buf.strip()
+                if ch == "\x03":  # ctrl-c
+                    raise KeyboardInterrupt
+                if ch == "\x04":  # ctrl-d
+                    raise EOFError
+                if ch in ("\x7f", "\b"):  # backspace
+                    buf = buf[:-1]
+                    continue
+                if ch == "\x1b":  # escape (arrow keys etc)
+                    if select.select([sys.stdin], [], [], 0)[0]:
+                        sys.stdin.read(2)
+                    continue
+                if ch.isprintable():
+                    buf += ch
+        finally:
+            termios.tcsetattr(fd, termios.TCSADRAIN, old)
+
     while True:
         try:
-            prompt = input("> ").strip()
+            prompt = input_with_token_count()
         except EOFError:
             break
         if not prompt:
