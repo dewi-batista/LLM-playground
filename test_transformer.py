@@ -574,7 +574,7 @@ def main():
 
     def input_with_token_count() -> str:
         if not (sys.stdin.isatty() and sys.stdout.isatty()):
-            return input(f"> 0/{seq_len} ").strip()
+            return input(f"> 0/{seq_len}: ").strip()
 
         import select
         import termios
@@ -590,7 +590,7 @@ def main():
                 n_disp = min(n, seq_len)
                 plus = "+" if n > seq_len else ""
                 sys.stdout.write("\r\x1b[2K")
-                sys.stdout.write(f"> {n_disp}{plus}/{seq_len} {buf}")
+                sys.stdout.write(f"> {n_disp}{plus}/{seq_len}: {buf}")
                 sys.stdout.flush()
 
                 ch = sys.stdin.read(1)
