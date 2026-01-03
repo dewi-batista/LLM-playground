@@ -128,10 +128,10 @@ token_ids = load_or_create_token_ids(
 token_id_to_index = np.full(vocab_size, -1, dtype=np.int32)
 for i, token_id in enumerate(keep_token_ids):
     token_id_to_index[token_id] = i
-tqdm.write("\nSTART: building indeces_corpus_to_token")
+tqdm.write("\nbuilding indeces_corpus_to_token")
 indeces_corpus_to_token = token_id_to_index[token_ids]
 indeces_corpus_to_token = indeces_corpus_to_token[indeces_corpus_to_token >= 0]
-tqdm.write(f"END: built indeces_corpus_to_token (length: {len(indeces_corpus_to_token):_})")
+tqdm.write(f"built indeces_corpus_to_token (length: {len(indeces_corpus_to_token):_})")
 
 # new ckpt if model number not passed as argument
 if model_number is None:
