@@ -12,6 +12,9 @@ METRICS_FIELDS = [
     "lr",
     "recent_loss",
     "eval_s",
+    "ckpt_s",
+    "svg_s",
+    "meta_s",
     "log_s",
     "val_ppl",
     "best_val_ppl",
@@ -45,7 +48,7 @@ def _fmt_metrics_row(row: dict) -> dict:
             out[k] = f"{float(v):.4g}"
         elif k == "recent_loss":
             out[k] = f"{float(v):.4f}"
-        elif k in {"eval_s", "log_s"}:
+        elif k in {"eval_s", "ckpt_s", "svg_s", "meta_s", "log_s"}:
             out[k] = f"{float(v):.2f}"
         elif k in {"val_ppl", "best_val_ppl"}:
             out[k] = f"{float(v):.2f}"
@@ -109,54 +112,68 @@ def atomic_text_save(text: str, path: Path) -> bool:
         return False
 
 
-def write_val_ppl_svg(metrics_path: Path, out_path: Path) -> None:
+def write_val_ppl_svg(metrics_path: Path, out_path: Path, extra: dict | None = None) -> None:
     try:
-        if not metrics_path.exists():
-            return
+        steps = []
+        val_nlls = []
+        train_nlls = []
 
-        with open(metrics_path, newline="") as f:
-            reader = csv.reader(f)
-            try:
-                header = next(reader)
-            except StopIteration:
-                return
-            header = [re.sub(r"^[^A-Za-z_]+", "", h.strip()) for h in header]
-            idx_step = header.index("global_step") if "global_step" in header else None
-            idx_val = header.index("val_ppl") if "val_ppl" in header else None
-            idx_train = header.index("recent_loss") if "recent_loss" in header else None
-            if idx_step is None or idx_val is None:
-                return
+        best_val_ppl = float("inf")
+        best_val_nlls = []
 
-            steps = []
-            val_nlls = []
-            train_nlls = []
-
-            best_val_ppl = float("inf")
-            best_val_nlls = []
-
-            for cols in reader:
+        if metrics_path.exists():
+            with open(metrics_path, newline="") as f:
+                reader = csv.reader(f)
                 try:
-                    step = int(float(cols[idx_step]))
-                    val_ppl = float(cols[idx_val])
-                    if val_ppl <= 0:
-                        continue
-                    val_nll = math.log(val_ppl)
-                except Exception:
-                    continue
+                    header = next(reader)
+                except StopIteration:
+                    header = None
 
-                train_nll = None
-                if idx_train is not None:
-                    try:
-                        train_nll = float(cols[idx_train])
-                    except Exception:
+                if header:
+                    header = [re.sub(r"^[^A-Za-z_]+", "", h.strip()) for h in header]
+                    idx_step = header.index("global_step") if "global_step" in header else None
+                    idx_val = header.index("val_ppl") if "val_ppl" in header else None
+                    idx_train = header.index("recent_loss") if "recent_loss" in header else None
+                    if idx_step is None or idx_val is None:
+                        return
+
+                    for cols in reader:
+                        try:
+                            step = int(float(cols[idx_step]))
+                            val_ppl = float(cols[idx_val])
+                            if val_ppl <= 0:
+                                continue
+                            val_nll = math.log(val_ppl)
+                        except Exception:
+                            continue
+
                         train_nll = None
+                        if idx_train is not None:
+                            try:
+                                train_nll = float(cols[idx_train])
+                            except Exception:
+                                train_nll = None
 
-                steps.append(step)
-                val_nlls.append(val_nll)
-                train_nlls.append(train_nll)
+                        steps.append(step)
+                        val_nlls.append(val_nll)
+                        train_nlls.append(train_nll)
 
-                best_val_ppl = min(best_val_ppl, val_ppl)
-                best_val_nlls.append(math.log(best_val_ppl))
+                        best_val_ppl = min(best_val_ppl, val_ppl)
+                        best_val_nlls.append(math.log(best_val_ppl))
+
+        if extra is not None:
+            step = int(extra["global_step"])
+            val_ppl = float(extra["val_ppl"])
+            train_nll = extra.get("train_nll", None)
+            train_nll = float(train_nll) if train_nll is not None else None
+
+            val_nll = math.log(val_ppl)
+            steps.append(step)
+            val_nlls.append(val_nll)
+            train_nlls.append(train_nll)
+
+            best_val_ppl = min(best_val_ppl, val_ppl)
+            best_val_nlls.append(math.log(best_val_ppl))
 
         if not steps:
             return

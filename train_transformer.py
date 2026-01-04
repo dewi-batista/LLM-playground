@@ -394,9 +394,11 @@ for step in pbar:
         prev_best_val_ppl = best_val_ppl
         is_best = (val_ppl < prev_best_val_ppl)
 
-        # safely save checkpoint, update metadata and update metrics
+        # save + logging timings
         log_t0 = time.perf_counter()
-        saved = False
+        ckpt_s = 0.0
+        svg_s = 0.0
+        meta_s = 0.0
         if is_best:
             model_to_save = model._orig_mod if hasattr(model, "_orig_mod") else model
             ckpt_obj = {
@@ -438,9 +440,10 @@ for step in pbar:
                 "rng_state_torch": torch.get_rng_state(),
                 "rng_state_cuda": torch.cuda.get_rng_state_all() if torch.cuda.is_available() else None,
             }
+            t0 = time.perf_counter()
             ok = atomic_torch_save(ckpt_obj, checkpoint_path)
+            ckpt_s = time.perf_counter() - t0
             if ok:
-                saved = True
                 best_val_ppl = val_ppl
                 meta = {
                     "language": language,
@@ -474,8 +477,21 @@ for step in pbar:
                     "token_ids_path": str(token_ids_path.relative_to(HERE)),
                     "checkpoint_path": str(checkpoint_path.relative_to(HERE)),
                 }
+                t0 = time.perf_counter()
                 atomic_json_save(meta, meta_path)
+                meta_s = time.perf_counter() - t0
                 tqdm.write(f"saved: {checkpoint_path} (step={step + 1}, val_ppl={val_ppl:.2f})")
+
+        t0 = time.perf_counter()
+        write_val_ppl_svg(
+            metrics_path,
+            val_ppl_plot_path,
+            extra={"global_step": step + 1, "val_ppl": val_ppl, "train_nll": train_nll},
+        )
+        svg_s = time.perf_counter() - t0
+
+        log_s = time.perf_counter() - log_t0
+
         append_metrics_row(
             metrics_path,
             {
@@ -484,18 +500,22 @@ for step in pbar:
                 "lr": current_lr,
                 "recent_loss": train_nll,
                 "eval_s": train_eval_s + val_eval_s,
-                "log_s": time.perf_counter() - log_t0,
+                "ckpt_s": ckpt_s,
+                "svg_s": svg_s,
+                "meta_s": meta_s,
+                "log_s": log_s,
                 "val_ppl": val_ppl,
                 "best_val_ppl": best_val_ppl,
                 "patience_count": no_improve_evals,
             },
         )
-        write_val_ppl_svg(metrics_path, val_ppl_plot_path)
         pbar.set_postfix(
             train_nll=f"{train_nll:.4f}",
             val_nll=f"{val_nll:.4f}",
             eval_s=f"{train_eval_s + val_eval_s:.1f}",
-            log_s=f"{time.perf_counter() - log_t0:.1f}",
+            ckpt_s=f"{ckpt_s:.1f}",
+            svg_s=f"{svg_s:.1f}",
+            log_s=f"{log_s:.1f}",
         )
         improvement = prev_best_val_ppl - val_ppl
         if early_stop_patience > 0:
