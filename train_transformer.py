@@ -340,6 +340,7 @@ for step in pbar:
         # cosine decay is: slow (early) -> aggerssive (mid) -> slow (late)
         progress = (step - warmup_steps) / max(1, total_steps - warmup_steps)
         current_lr = (1.0 + math.cos(math.pi * progress)) * (lr / 2)
+        # tqdm.write(f"I am invoked, {lr}, {step}, {warmup_steps}, {total_steps}, {progress},{current_lr}")
     for group in optimizer.param_groups:
         group["lr"] = current_lr
     optimizer.zero_grad()
@@ -499,18 +500,19 @@ for step in pbar:
                 "seen_tokens": int((step + 1) * tokens_per_step),
                 "lr": current_lr,
                 "recent_loss": train_nll,
+                "eval_s": train_eval_s + val_eval_s,
+                "ckpt_s": ckpt_s,
+                "svg_s": svg_s,
+                "meta_s": meta_s,
+                "log_s": log_s,
                 "val_ppl": val_ppl,
                 "best_val_ppl": best_val_ppl,
                 "patience_count": no_improve_evals,
             },
         )
         pbar.set_postfix(
-            train_nll=f"{train_nll:.4f}",
-            val_nll=f"{val_nll:.4f}",
-            eval_s=f"{train_eval_s + val_eval_s:.1f}",
-            ckpt_s=f"{ckpt_s:.1f}",
-            svg_s=f"{svg_s:.1f}",
-            log_s=f"{log_s:.1f}",
+            train_nll=f"{train_nll:.3f}",
+            val_nll=f"{val_nll:.3f}",
         )
         improvement = prev_best_val_ppl - val_ppl
         if early_stop_patience > 0:
