@@ -132,6 +132,9 @@ def main():
         target_token = pre_tokens[-1]
         context_text = "".join(context_tokens)
 
+        full_indeces = encode_pre_tokens_to_indices(pre_tokens, bpe_encode, token_id_to_index)
+        full_token_count = len(full_indeces)
+
         context_indeces = encode_pre_tokens_to_indices(context_tokens, bpe_encode, token_id_to_index)
         context_indeces = context_indeces[-seq_len:]
 
@@ -173,7 +176,7 @@ def main():
             generated.append(token_to_cli(index_to_token[next_idx]))
 
         rank_part = str(int(best_rank)) if best_rank is not None else "<not in vocab after pruning>"
-        print(f"\n{context_text} [{token_to_cli(target_token)}, {rank_part}]")
+        print(f"\n{context_text} [{token_to_cli(target_token)}, {rank_part}] ({full_token_count} tokens)")
         print(top10)
         print(generated)
 
