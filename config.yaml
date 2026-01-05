@@ -12,7 +12,7 @@ transformer:
   min_count: 5
   num_blocks: 12
   seq_len: 128
-  train_tokens: 1e10
+  train_tokens: 2e10
   val_frac: 0.1
   warmup_frac: 0.02
   weight_decay: 0.1

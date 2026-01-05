@@ -25,10 +25,10 @@ HERE = Path(__file__).resolve().parent
 MODELS_DIR = HERE / "models"
 
 BENCH_SENTENCES = [
-    "The capital of France is Paris",
+    "The name of the capital of France is Paris",
+    "The name of the capital of Italy is Rome",
     "Paris is the capital of France",
     "Rome is the capital of Italy",
-    "The capital of Italy is Rome",
     "The quick brown fox jumps over the lazy dog",
     "The largest planet in the solar system is Jupiter",
     "The author of Hamlet is William Shakespeare",
@@ -40,12 +40,13 @@ BENCH_SENTENCES = [
     "I like to drink coffee in the morning",
     "The patron saint of Wales was Dewi",
     "The patron saint of Wales was Dewi Sant",
+    "The subject is Bryan. He is very suspicious and stands accused of awful crimes against humanity. Recall that the name of the subject is Bryan"
 ]
 NEXT_TOKENS = 5
 
 # decoding knobs
 SAMPLE = True
-TEMPERATURE = 0.7
+TEMPERATURE = 0.5
 REPETITION_PENALTY = 1.1
 NO_REPEAT_NGRAM = 3
 
@@ -169,7 +170,6 @@ def main():
         print(f"\n{context_text} [{token_to_cli(target_token)}, {rank_part}]")
         print(top10)
         print(generated)
-
 
 if __name__ == "__main__":
     main()
