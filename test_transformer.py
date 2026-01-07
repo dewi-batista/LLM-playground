@@ -30,25 +30,22 @@ BENCH_SENTENCES = [
     "Paris is the capital of France",
     "Rome is the capital of Italy",
     "The quick brown fox jumps over the lazy dog",
-    "The largest planet in the solar system is Jupiter",
+    "The name of the largest planet in the solar system is Jupiter",
     "The author of Hamlet is William Shakespeare",
     "Machine learning is a field of artificial intelligence",
     "New York is a city in the United States",
     "London is a city in the United Kingdom",
     "London is a city in England",
-    "My favourite basketballer is Michael Jordan",
     "I like to drink coffee in the morning",
-    "The witness statement is repetitive by design. The individual under discussion is introduced clearly at the beginning and referenced consistently afterward. His actions, motivations, and alleged behavior all belong to the same person, without aliases or substitutions. The narrative avoids metaphor to reduce ambiguity. The goal is simple recall. The subject is named early and reinforced later. The subject of this entire account, whose name must be predicted at the end, is Bryan. Therefore the name of the subject is Bryan",
-    "A single object is described in detail to ensure clarity. It is a wooden box placed on a bare table. The box is painted blue, not red, not green, and not black. The color is emphasized repeatedly because it matters later. Other objects appear briefly but are irrelevant. Only one box is central to the description. The box that remains important throughout the passage is blue. The color of the box is blue",
-    "The system contains several components, but only one functions correctly. Lever A is jammed and cannot move. Lever B is missing entirely. Lever C is intact and wired to the machine. Multiple tests confirm that activation only occurs when the correct lever is used. All failures are traced to incorrect choices. Since only one lever works, the lever that activates the machine is C",
-    "At the start of this report, a single variable is defined and never changed. The value is stated plainly to avoid confusion later. The variable is assigned the value seven in the first paragraph. Throughout the explanation, other values are mentioned only as contrasts or hypotheticals. None of them override the original assignment. The text repeatedly reminds the reader that consistency matters for correct recall. The variable was set at the beginning and remains unchanged. The value of the variable is seven",
-    "In this story there is one destination that matters. The traveler considers many cities, rejecting each for clear reasons. Paris is too loud, Berlin too cold, and Rome too crowded. Early on, the narrator states the chosen destination and never revises it. All plans, tickets, and expectations point toward the same place. The city the traveler ultimately goes to is Lisbon",
-    "A puzzle describes three keys laid out on a table. One is gold but decorative, one is silver but broken, and one is iron and functional. The narrator explains that only the working key can open the door. Several sentences restate which key actually works to ensure recall. The door opens only when the correct key is used. The key that opens the door is iron",
-    "The experiment tracks one test subject carefully. Others appear briefly but are excluded from the final analysis. The chosen subject is identified by name in the first sentence and referenced indirectly afterward. No substitutions are allowed because the conclusion depends on accurate memory. The report summarizes all observations as belonging to the same individual. The test subject being analyzed is named Clara",
-    "A lesson describes a rule with an explicit exception. The exception is mentioned first to ensure it stands out. Later examples reinforce that the rule fails only in that single case. Nothing else violates it. The conclusion asks the reader to recall the unique exception discussed earlier. The only exception to the rule is zero",
-
+    # "In a long blog-style explanation, the author clarifies a single factual detail early so readers can follow along. In the opening paragraph, it states plainly that the article was originally published in 2016. Later sections discuss trends before and after that year, comparing 2014, 2018, and even 2020 as reference points. Commenters speculate about updates, but the author never revises the original publication date. The closing sentence asks the reader to recall the year mentioned at the start. The article was published in 2016",
+    # "This forum post walks through a personal setup step by step, using a conversational tone common online. Early on, the poster explains that their operating system of choice is Linux, and that this preference motivates all later decisions. Other systems like Windows and macOS are mentioned only for comparison or criticism. Configuration details, package managers, and command examples all assume the same system throughout. In the final line, the post summarizes the choice made at the beginning. The operating system used is Linux",
+    # "A wiki-style paragraph introduces a concept and immediately names the key term to remember. It says that the protocol being discussed is called HTTPS, and explains why it matters for security. Later sentences contrast it with HTTP, clearly labeling HTTP as the older and less secure alternative. Examples, use cases, and historical notes consistently return to the same protocol name. The final sentence prompts recall of the main term introduced at the start. The protocol described is HTTPS",
+    # "In an online explainer about programming habits, the author states early that the language used in all examples is Python. Subsequent code snippets, syntax discussions, and library references all align with that choice. Other languages such as JavaScript and C++ are mentioned only as points of comparison, not as active examples. The post emphasizes consistency to avoid confusing beginners. At the end, the author reminds the reader which language was used throughout. The language used is Python",
+    # "A long comment thread summary describes a controversy involving a single platform. In the opening sentence, it notes that the discussion centers on Reddit and its moderation policies. Other platforms like Twitter and Facebook appear briefly as comparisons, but the focus never shifts away. Every quoted complaint, rule change, and reaction is tied back to the same site. The summary concludes by asking which platform the debate was about. The platform discussed is Reddit",
+    "My favourite basketballer is Michael Jordan",
+    "Michael Jordan plays the sport of basketball",
 ]
-NEXT_TOKENS = 5
+NEXT_TOKENS = 100
 
 # decoding knobs
 SAMPLE = True
