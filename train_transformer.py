@@ -17,6 +17,7 @@ import sys
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+from torch.utils.checkpoint import checkpoint
 import yaml
 
 # CLI-related
@@ -100,6 +101,7 @@ early_stop_pat   = int(cfg["early_stop_pat"])
 eval_batches     = int(cfg["eval_batches"])
 eval_every       = int(cfg["eval_every"])
 grad_accum_steps = int(cfg["grad_accum_steps"])
+grad_checkpoint  = bool(cfg["grad_checkpoint"])
 grad_clip        = float(cfg["grad_clip"])
 lr               = float(cfg["lr"])
 min_count        = int(cfg["min_count"])
@@ -249,15 +251,23 @@ def eval_nll(token_ids, desc): # eval NLL on random batches (dropout off)
 
         with torch.autocast(device_type=device.type, dtype=amp_dtype, enabled=amp_enabled):
             X = dropout_embed(E(context_window) + pos_embedding)
-            logits = U(final_lay_norm(model(X)))
+            logits = U(final_lay_norm(run_model(X)))
             loss = F.cross_entropy(logits.reshape(-1, V), targets.reshape(-1))
         total_loss += float(loss)
 
     return total_loss / eval_batches
 
-model = torch.compile(model, mode="reduce-overhead")
+if not grad_checkpoint:
+    model = torch.compile(model, mode="reduce-overhead")
 offsets = np.arange(seq_len, dtype=np.int64)
 pos_embedding = positional_encoding(seq_len, d_model, device=device)
+
+def run_model(X):
+    if (not grad_checkpoint) or (not torch.is_grad_enabled()):
+        return model(X)
+    for block in model:
+        X = checkpoint(block, X, use_reentrant=False)
+    return X
 
 early_stopped = False
 no_improve_evals = 0
@@ -290,7 +300,7 @@ for step in pbar:
 
         with torch.autocast(device_type=device.type, dtype=amp_dtype, enabled=amp_enabled):
             X = dropout_embed(E(context_window) + pos_embedding)
-            logits = U(final_lay_norm(model(X)))
+            logits = U(final_lay_norm(run_model(X)))
             loss = F.cross_entropy(logits.reshape(-1, V), targets.reshape(-1))
         (loss / grad_accum_steps).backward()
     torch.nn.utils.clip_grad_norm_(params, grad_clip)

@@ -17,6 +17,7 @@ import sys
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+from torch.utils.checkpoint import checkpoint
 import yaml
 
 # CLI-related
@@ -70,6 +71,7 @@ dropout           = float(cfg["dropout"])
 eval_batches      = int(cfg["eval_batches"])
 eval_every        = int(cfg["eval_every"])
 grad_accum_steps  = int(cfg["grad_accum_steps"])
+grad_checkpoint   = bool(cfg["grad_checkpoint"])
 grad_clip         = float(cfg["grad_clip"])
 lr                = float(cfg["lr"])
 train_tokens      = float(cfg["train_tokens"])
@@ -238,7 +240,7 @@ def batch_loss(token_ids, token_mask):
     y = y.masked_fill(~m, -100)
     with torch.autocast(device_type=device.type, dtype=amp_dtype, enabled=amp_enabled):
         X = dropout_embed(E(x) + pos_embedding)
-        logits = U(final_lay_norm(model(X)))
+        logits = U(final_lay_norm(run_model(X)))
         loss_sum = F.cross_entropy(logits.reshape(-1, V), y.reshape(-1), ignore_index=-100, reduction="sum")
     denom = m.sum().clamp(min=1)
     return loss_sum / denom
@@ -250,9 +252,17 @@ def eval_nll(token_ids, token_mask, desc):
         total_loss += float(batch_loss(token_ids, token_mask))
     return total_loss / eval_batches
 
-model = torch.compile(model, mode="reduce-overhead")
+if not grad_checkpoint:
+    model = torch.compile(model, mode="reduce-overhead")
 offsets = np.arange(seq_len, dtype=np.int64)
 pos_embedding = positional_encoding(seq_len, d_model, device=device)
+
+def run_model(X):
+    if (not grad_checkpoint) or (not torch.is_grad_enabled()):
+        return model(X)
+    for block in model:
+        X = checkpoint(block, X, use_reentrant=False)
+    return X
 
 pbar = tqdm(range(start_step, total_steps), desc="Train (SFT)", unit=" batch", total=total_steps, initial=start_step)
 train_nll = None
