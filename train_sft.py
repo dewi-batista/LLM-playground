@@ -52,6 +52,7 @@ else:
 
 sft_run_dir = base_run_dir / f"sft_run_{model_number}"
 sft_run_dir.mkdir(parents=True, exist_ok=True)
+
 checkpoint_path = sft_run_dir / "weights.ckpt"
 meta_path = sft_run_dir / "meta.json"
 metrics_path = sft_run_dir / "metrics.csv"
@@ -118,7 +119,6 @@ num_blocks = int(base_ckpt["num_blocks"])
 d_ff = int(base_ckpt["d_ff"])
 tqdm.write(f"arch: V={V}, d_model={d_model}, blocks={num_blocks}, heads={num_heads}, seq_len={seq_len}")
 
-
 def encode_with_mask(prompt_text: str, full_text: str):
     prompt_ids = []
     for tok in iter_pre_tokens(prompt_text):
@@ -136,7 +136,6 @@ def encode_with_mask(prompt_text: str, full_text: str):
     keep = idx >= 0
     return idx[keep].astype(np.int32), mask[keep]
 
-
 tqdm.write("\nloading dataset: tatsu-lab/alpaca")
 ds = load_dataset("tatsu-lab/alpaca")["train"]
 ds = ds.filter(lambda x: bool(x["instruction"]) and bool(x["output"]))
@@ -144,7 +143,6 @@ ds = ds.train_test_split(test_size=val_frac, seed=0)
 ds_train = ds["train"]
 ds_val = ds["test"]
 tqdm.write(f"examples: train={len(ds_train):_}, val={len(ds_val):_}")
-
 
 def build_stream(data):
     all_ids = []
@@ -161,18 +159,15 @@ def build_stream(data):
         all_mask.append(mask)
     return np.concatenate(all_ids), np.concatenate(all_mask)
 
-
 train_ids, train_mask = build_stream(ds_train)
 val_ids, val_mask = build_stream(ds_val)
 tqdm.write(f"tokens: train={len(train_ids):_}, val={len(val_ids):_}")
-
 
 # step count computations
 tokens_per_step = batch_size * seq_len * grad_accum_steps
 total_steps = int(math.ceil(train_tokens / tokens_per_step))
 warmup_steps = max(1, int(total_steps * warmup_frac))
 tqdm.write(f"\ntrain_tokens: {int(train_tokens):_}\ntokens_per_step: {tokens_per_step:_}\ntotal_steps: {total_steps:_}\nwarmup_steps: {warmup_steps:_}")
-
 
 # the model begins...
 dropout_embed = nn.Dropout(dropout).to(device)
@@ -187,7 +182,6 @@ U.weight = E.weight
 E.load_state_dict(base_ckpt["E_state_dict"])
 model.load_state_dict(base_ckpt["model_state_dict"])
 final_lay_norm.load_state_dict(base_ckpt["final_lay_norm_state_dict"])
-
 
 # NOTE: Does not include U.parameters() due to weight tying.
 params = list(E.parameters()) + list(model.parameters()) + list(final_lay_norm.parameters())
@@ -205,7 +199,6 @@ optimizer = torch.optim.AdamW(
     eps=1e-8,
     fused=True, # assumes CUDA device + recent PyTorch version
 )
-
 
 start_step = 0
 best_val_ppl = float("inf")
@@ -232,7 +225,6 @@ if resume:
 
     tqdm.write(f"\nresuming from: {os.path.relpath(checkpoint_path, HERE)}\n(start step: {start_step:_})")
 
-
 def batch_loss(token_ids, token_mask):
     starts = np.random.randint(0, len(token_ids) - seq_len - 2, size=batch_size)
     x_np = token_ids[starts[:, None] + offsets[None, :]]
@@ -258,17 +250,14 @@ def eval_nll(token_ids, token_mask, desc):
         total_loss += float(batch_loss(token_ids, token_mask))
     return total_loss / eval_batches
 
-
 model = torch.compile(model, mode="reduce-overhead")
 offsets = np.arange(seq_len, dtype=np.int64)
 pos_embedding = positional_encoding(seq_len, d_model, device=device)
-
 
 pbar = tqdm(range(start_step, total_steps), desc="Train (SFT)", unit=" batch", total=total_steps, initial=start_step)
 train_nll = None
 val_nll = None
 for step in pbar:
-
     # update lr of all parmams: warmup -> cosine decay
     if step < warmup_steps:
         current_lr = lr * (step + 1) / warmup_steps
@@ -385,9 +374,5 @@ for step in pbar:
         )
         write_val_ppl_svg(metrics_path, val_ppl_plot_path)
 
-        pbar.set_postfix(
-            train_nll=f"{train_nll:.3f}",
-            val_nll=f"{val_nll:.3f}",
-        )
-
-tqdm.write("SFT complete!")
+        pbar.set_postfix(train_nll=f"{train_nll:.3f}", val_nll=f"{val_nll:.3f}")
+tqdm.write("Supervised fine-tuning complete!")

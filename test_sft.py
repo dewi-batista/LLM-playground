@@ -25,91 +25,87 @@ BATCH_INSTRUCTIONS = [
     "Give me 3 bullet points about neural networks.",
     "What is gradient descent?",
     "Write a Python function that returns factorial(n).",
-    "Write a story about Harry Potter",
+    "Write a story about Harry Potter fighting a man made of mushrooms",
 ]
 
-MAX_NEW_TOKENS = 50
+MAX_NEW_TOKENS = 100
 NO_REPEAT_NGRAM = 3
 REPETITION_PENALTY = 1.1
 SAMPLE = True
 TEMPERATURE = 0.7
 
-def main():
-    if len(sys.argv) < 5:
-        print(f"usage: python {Path(__file__).name} <language> <vocab_timestamp> <base_model_number> <sft_run_number>")
-        raise SystemExit(1)
+if len(sys.argv) < 5:
+    print(f"usage: python {Path(__file__).name} <language> <vocab_timestamp> <base_model_number> <sft_run_number>")
+    raise SystemExit(1)
 
-    language = sys.argv[1]
-    timestamp = sys.argv[2]
-    base_model_number = int(sys.argv[3])
-    sft_run_number = int(sys.argv[4])
+language = sys.argv[1]
+timestamp = sys.argv[2]
+base_model_number = int(sys.argv[3])
+sft_run_number = int(sys.argv[4])
 
-    device = torch.device("cuda") if torch.cuda.is_available() else torch.device("cpu")
+device = torch.device("cuda") if torch.cuda.is_available() else torch.device("cpu")
 
-    run_dir = MODELS_DIR / language / timestamp
-    
-    ckpt_path = (run_dir / f"training_run_{base_model_number}" / f"sft_run_{sft_run_number}" / "weights.ckpt")
-    vocab_path = Path(ckpt["bpe_vocab_path"])
-    encodings_path = Path(ckpt["bpe_encodings_path"])
+run_dir = MODELS_DIR / language / timestamp
+ckpt_path = (run_dir / f"training_run_{base_model_number}" / f"sft_run_{sft_run_number}" / "weights.ckpt")
 
-    with open(vocab_path) as f:
-        vocab = json.load(f)
-    with open(encodings_path, "rb") as f:
-        encodings = pickle.load(f)
+ckpt = torch.load(ckpt_path, map_location="cpu", weights_only=False)
+vocab_path = Path(ckpt["bpe_vocab_path"])
+encodings_path = Path(ckpt["bpe_encodings_path"])
 
-    bpe_encode = make_bpe_encoder(encodings)
-    ckpt = torch.load(ckpt_path, map_location="cpu", weights_only=False)
-    index_to_token = ckpt["index_to_token"]
-    token_id_to_index, _token_str_to_index = build_token_id_to_index(vocab, index_to_token)
+with open(vocab_path) as f:
+    vocab = json.load(f)
+with open(encodings_path, "rb") as f:
+    encodings = pickle.load(f)
 
-    d_ff = int(ckpt["d_ff"])
-    d_model = int(ckpt["d_model"])
-    dropout = float(ckpt["dropout"])
-    num_heads = int(ckpt["num_heads"])
-    num_blocks = int(ckpt["num_blocks"])
-    seq_len = int(ckpt["seq_len"])
-    V = len(index_to_token)
+bpe_encode = make_bpe_encoder(encodings)
+index_to_token = ckpt["index_to_token"]
+token_id_to_index, _token_str_to_index = build_token_id_to_index(vocab, index_to_token)
 
-    # architecture
-    E = nn.Embedding(V, d_model).to(device)
-    final_lay_norm = nn.LayerNorm(d_model).to(device)
-    model = nn.Sequential(*[TransformerBlock(d_model, d_ff, num_heads, dropout) for _ in range(num_blocks)]).to(device)
-    U = nn.Linear(d_model, V, bias=False).to(device)
-    U.weight = E.weight
+d_ff = int(ckpt["d_ff"])
+d_model = int(ckpt["d_model"])
+dropout = float(ckpt["dropout"])
+num_heads = int(ckpt["num_heads"])
+num_blocks = int(ckpt["num_blocks"])
+seq_len = int(ckpt["seq_len"])
+V = len(index_to_token)
 
-    # load ckpt weights
-    E.load_state_dict(ckpt["E_state_dict"])
-    model.load_state_dict(ckpt["model_state_dict"])
-    final_lay_norm.load_state_dict(ckpt["final_lay_norm_state_dict"])
+# architecture
+E = nn.Embedding(V, d_model).to(device)
+final_lay_norm = nn.LayerNorm(d_model).to(device)
+model = nn.Sequential(*[TransformerBlock(d_model, d_ff, num_heads, dropout) for _ in range(num_blocks)]).to(device)
+U = nn.Linear(d_model, V, bias=False).to(device)
+U.weight = E.weight
 
-    # set eval mode
-    E.eval()
-    model.eval()
-    final_lay_norm.eval()
-    U.eval()
+# load ckpt weights
+E.load_state_dict(ckpt["E_state_dict"])
+model.load_state_dict(ckpt["model_state_dict"])
+final_lay_norm.load_state_dict(ckpt["final_lay_norm_state_dict"])
 
-    pe = positional_encoding(seq_len, d_model, device=device)
-    for instruction in BATCH_INSTRUCTIONS:
-        prompt = f"Instruction: {instruction.strip()} Response:"
-        pre_tokens = list(iter_pre_tokens(prompt))
-        prompt_indeces = encode_pre_tokens_to_indices(pre_tokens, bpe_encode, token_id_to_index)
-        prompt_indeces = prompt_indeces[-seq_len:]
+# set eval mode
+E.eval()
+model.eval()
+final_lay_norm.eval()
+U.eval()
 
-        indeces = list(prompt_indeces)
-        for _ in range(MAX_NEW_TOKENS):
-            logits = next_token_logits(indeces[-seq_len:], E, model, final_lay_norm, U, pe)
-            next_idx = sample_next_token(
-                logits,
-                indeces[-seq_len:],
-                sample=SAMPLE,
-                temperature=TEMPERATURE,
-                repetition_penalty=REPETITION_PENALTY,
-                no_repeat_ngram=NO_REPEAT_NGRAM,
-            )
-            indeces.append(next_idx)
-        response = "".join(index_to_token[i] for i in indeces[len(prompt_indeces) :])
-        print(f"\n{instruction}")
-        print(response)
+pe = positional_encoding(seq_len, d_model, device=device)
+for instruction in BATCH_INSTRUCTIONS:
+    prompt = f"Instruction: {instruction.strip()} Response:"
+    pre_tokens = list(iter_pre_tokens(prompt))
+    prompt_indeces = encode_pre_tokens_to_indices(pre_tokens, bpe_encode, token_id_to_index)
+    prompt_indeces = prompt_indeces[-seq_len:]
 
-if __name__ == "__main__":
-    main()
+    indeces = list(prompt_indeces)
+    for _ in range(MAX_NEW_TOKENS):
+        logits = next_token_logits(indeces[-seq_len:], E, model, final_lay_norm, U, pe)
+        next_idx = sample_next_token(
+            logits,
+            indeces[-seq_len:],
+            sample=SAMPLE,
+            temperature=TEMPERATURE,
+            repetition_penalty=REPETITION_PENALTY,
+            no_repeat_ngram=NO_REPEAT_NGRAM,
+        )
+        indeces.append(next_idx)
+    response = "".join(index_to_token[i] for i in indeces[len(prompt_indeces) :])
+    print(f"\n{instruction}")
+    print(response)
