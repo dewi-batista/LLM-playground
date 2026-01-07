@@ -7,7 +7,6 @@ from tfs_utils.metrics import append_metrics_row, write_val_ppl_svg
 from pathlib import Path
 from tqdm import tqdm
 
-import inspect
 import json
 import math
 import numpy as np
