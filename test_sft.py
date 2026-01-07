@@ -13,7 +13,6 @@ from tfs_utils.core import (
 import json
 import pickle
 import sys
-
 import torch
 import torch.nn as nn
 
@@ -47,10 +46,8 @@ def main():
     device = torch.device("cuda") if torch.cuda.is_available() else torch.device("cpu")
 
     run_dir = MODELS_DIR / language / timestamp
+    
     ckpt_path = (run_dir / f"training_run_{base_model_number}" / f"sft_run_{sft_run_number}" / "weights.ckpt")
-
-    ckpt = torch.load(ckpt_path, map_location="cpu", weights_only=False)
-
     vocab_path = Path(ckpt["bpe_vocab_path"])
     encodings_path = Path(ckpt["bpe_encodings_path"])
 
@@ -58,18 +55,19 @@ def main():
         vocab = json.load(f)
     with open(encodings_path, "rb") as f:
         encodings = pickle.load(f)
-    bpe_encode = make_bpe_encoder(encodings)
 
+    bpe_encode = make_bpe_encoder(encodings)
+    ckpt = torch.load(ckpt_path, map_location="cpu", weights_only=False)
     index_to_token = ckpt["index_to_token"]
     token_id_to_index, _token_str_to_index = build_token_id_to_index(vocab, index_to_token)
 
-    V = len(index_to_token)
+    d_ff = int(ckpt["d_ff"])
     d_model = int(ckpt["d_model"])
+    dropout = float(ckpt["dropout"])
     num_heads = int(ckpt["num_heads"])
     num_blocks = int(ckpt["num_blocks"])
-    d_ff = int(ckpt["d_ff"])
-    dropout = float(ckpt["dropout"])
     seq_len = int(ckpt["seq_len"])
+    V = len(index_to_token)
 
     # architecture
     E = nn.Embedding(V, d_model).to(device)
