@@ -15,7 +15,6 @@ import os
 import pickle
 import random
 import sys
-import time
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -322,10 +321,6 @@ def eval_nll(token_ids):
 
     return total_loss / eval_batches
 
-def _sync_cuda():
-    if device.type == "cuda":
-        torch.cuda.synchronize()
-
 train_nll = None
 val_nll = None
 no_improve_evals = 0
@@ -373,17 +368,8 @@ for step in pbar:
         dropout_embed.eval()
 
         with torch.inference_mode():
-            _sync_cuda()
-            t0 = time.perf_counter()
             train_nll = eval_nll(train_token_ids)
-            _sync_cuda()
-            train_eval_s = time.perf_counter() - t0
-
-            _sync_cuda()
-            t0 = time.perf_counter()
             val_nll = eval_nll(val_token_ids)
-            _sync_cuda()
-            val_eval_s = time.perf_counter() - t0
 
         E.train()
         model.train()
@@ -395,11 +381,6 @@ for step in pbar:
         prev_best_val_ppl = best_val_ppl
         is_best = (val_ppl < prev_best_val_ppl)
 
-        # save + logging timings
-        log_t0 = time.perf_counter()
-        ckpt_s = 0.0
-        svg_s = 0.0
-        meta_s = 0.0
         if is_best:
             model_to_save = model._orig_mod if hasattr(model, "_orig_mod") else model
             ckpt_obj = {
@@ -441,9 +422,7 @@ for step in pbar:
                 "rng_state_torch": torch.get_rng_state(),
                 "rng_state_cuda": torch.cuda.get_rng_state_all() if torch.cuda.is_available() else None,
             }
-            t0 = time.perf_counter()
             ok = atomic_torch_save(ckpt_obj, checkpoint_path)
-            ckpt_s = time.perf_counter() - t0
             if ok:
                 best_val_ppl = val_ppl
                 meta = {
@@ -478,20 +457,8 @@ for step in pbar:
                     "token_ids_path": str(token_ids_path.relative_to(HERE)),
                     "checkpoint_path": str(checkpoint_path.relative_to(HERE)),
                 }
-                t0 = time.perf_counter()
                 atomic_json_save(meta, meta_path)
-                meta_s = time.perf_counter() - t0
                 tqdm.write(f"saved: {checkpoint_path} (step={step + 1}, val_ppl={val_ppl:.2f})")
-
-        t0 = time.perf_counter()
-        write_val_ppl_svg(
-            metrics_path,
-            val_ppl_plot_path,
-            extra={"global_step": step + 1, "val_ppl": val_ppl, "train_nll": train_nll},
-        )
-        svg_s = time.perf_counter() - t0
-
-        log_s = time.perf_counter() - log_t0
 
         append_metrics_row(
             metrics_path,
@@ -500,16 +467,12 @@ for step in pbar:
                 "seen_tokens": int((step + 1) * tokens_per_step),
                 "lr": current_lr,
                 "recent_loss": train_nll,
-                "eval_s": train_eval_s + val_eval_s,
-                "ckpt_s": ckpt_s,
-                "svg_s": svg_s,
-                "meta_s": meta_s,
-                "log_s": log_s,
                 "val_ppl": val_ppl,
                 "best_val_ppl": best_val_ppl,
                 "patience_count": no_improve_evals,
             },
         )
+        write_val_ppl_svg(metrics_path, val_ppl_plot_path)
         pbar.set_postfix(
             train_nll=f"{train_nll:.3f}",
             val_nll=f"{val_nll:.3f}",

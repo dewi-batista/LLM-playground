@@ -11,11 +11,6 @@ METRICS_FIELDS = [
     "seen_tokens",
     "lr",
     "recent_loss",
-    "eval_s",
-    "ckpt_s",
-    "svg_s",
-    "meta_s",
-    "log_s",
     "val_ppl",
     "best_val_ppl",
     "patience_count",
@@ -48,8 +43,6 @@ def _fmt_metrics_row(row: dict) -> dict:
             out[k] = f"{float(v):.4g}"
         elif k == "recent_loss":
             out[k] = f"{float(v):.4f}"
-        elif k in {"eval_s", "ckpt_s", "svg_s", "meta_s", "log_s"}:
-            out[k] = f"{float(v):.2f}"
         elif k in {"val_ppl", "best_val_ppl"}:
             out[k] = f"{float(v):.2f}"
         elif k == "patience_count":
