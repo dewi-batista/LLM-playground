@@ -69,12 +69,11 @@ index_to_token = [vocab[str(i)]["string"] for i in keep_token_ids]
 V = len(index_to_token)
 
 # for probabilities pertaining to negative indices
-neg_probs = np.zeros(V, dtype=np.float64)
 counts = np.zeros(V, dtype=np.int64)
 for idx, token_id in enumerate(keep_token_ids):
     info = vocab[str(token_id)]
-    neg_probs[idx] = float(info["neg_prob"])
     counts[idx] = int(info["count"])
+neg_probs = counts.astype(np.float64) ** 0.75
 neg_probs /= neg_probs.sum()
 neg_probs_t = torch.as_tensor(neg_probs, dtype=torch.float, device=device)
 

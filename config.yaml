@@ -3,7 +3,7 @@ transformer:
   d_model: 768
   dropout: 0.1
   early_stop_delta: 0.1
-  early_stop_patience: 10
+  early_stop_pat: 10
   eval_batches: 50
   eval_every: 1000
   grad_accum_steps: 1

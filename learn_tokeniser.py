@@ -163,14 +163,11 @@ def learn_encodings(token_counts, corpus_name):
         a, b = pair
         token_bytes[new_token] = token_bytes[a] + token_bytes[b]
 
-    # construct distribution
-    Z = sum(count ** 0.75 for count in token_id_counts)
     vocab = {
         str(token_id): {
             "index": token_id,
             "count": token_id_counts[token_id],
             "string": token_bytes[token_id].decode("utf-8", errors="backslashreplace"),
-            "neg_prob": (token_id_counts[token_id] ** 0.75) / Z,
         }
         for token_id in range(vocab_size)
     }
@@ -181,8 +178,6 @@ def learn_encodings(token_counts, corpus_name):
     index_word_idxth = len(str(vocab_size - 1))
     count_word_idxth = len(str(max(token_id_counts)))
     string_word_idxth = max(len(json.dumps(vocab[str(i)]["string"], ensure_ascii=False)) for i in range(vocab_size))
-    max_neg_prob = max(vocab[str(i)]["neg_prob"] for i in range(vocab_size))
-    neg_prob_word_idxth = len(f"{max_neg_prob:.10e}")
     with open(vocab_path, "w") as f:
         f.write("{\n")
         for token_id in tqdm(range(vocab_size), desc="Writing JSON file"):
@@ -191,14 +186,11 @@ def learn_encodings(token_counts, corpus_name):
             string_json = json.dumps(v["string"], ensure_ascii=False)
             string_json_pad = " " * (string_word_idxth - len(string_json))
             string_pad = " "
-            neg_prob_str = f"{v['neg_prob']:.10e}"
-            neg_prob_pad = " " * (neg_prob_word_idxth - len(neg_prob_str))
             subdict = (
                 "{"
                 f'"index": {v["index"]:>{index_word_idxth}d}, '
                 f'"count": {v["count"]:>{count_word_idxth}d}, '
-                f'"string": {string_pad}{string_json}{string_json_pad}, '
-                f'"neg_prob": {neg_prob_pad}{neg_prob_str}'
+                f'"string": {string_pad}{string_json}{string_json_pad}'
                 "}"
             )
             comma = "," if token_id < vocab_size - 1 else ""

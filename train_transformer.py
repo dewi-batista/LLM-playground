@@ -1,6 +1,6 @@
 from cache_tokenisation import load_or_create_token_ids
-from tfs_utils.metrics import append_metrics_row, write_val_ppl_svg
 from tfs_utils.core import TransformerBlock, positional_encoding
+from tfs_utils.metrics import append_metrics_row, write_val_ppl_svg
 
 from pathlib import Path
 from tqdm import tqdm
@@ -55,10 +55,16 @@ with open(vocab_path) as f:
     vocab = json.load(f)
 vocab_size = len(vocab)
 
-# pre-training sanity checks
+# new training run if model_number not passed as argument
+if model_number is None:
+    model_number = len([p for p in run_dir.glob("training_run_*") if p.is_dir()]) + 1
+    resume = False
+else:
+    resume = True
+
+# sanity checks
 tqdm.write(f"\n\navailable: {device} (cuda={torch.cuda.is_available()}, cuda_devices={torch.cuda.device_count()})")
-if torch.cuda.is_available():
-    tqdm.write(f"device: {torch.cuda.get_device_name(0)}")
+tqdm.write(f"device: {torch.cuda.get_device_name(0)}")
 tqdm.write(f"amp: {'bf16' if amp_enabled else 'off'}")
 tqdm.write(f"tf32: {'on' if (device.type == 'cuda' and torch.backends.cuda.matmul.allow_tf32) else 'off'}")
 
@@ -68,8 +74,7 @@ tqdm.write(f"corpus_path: {os.path.relpath(corpus_path, HERE)} (exists={corpus_p
 tqdm.write(f"encodings_path: {os.path.relpath(encodings_path, HERE)} (exists={encodings_path.exists()})")
 tqdm.write(f"vocab_path: {os.path.relpath(vocab_path, HERE)} (exists={vocab_path.exists()})")
 tqdm.write(f"token_ids_path: {os.path.relpath(token_ids_path, HERE)} (exists={token_ids_path.exists()})")
-if token_ids_path.exists():
-    tqdm.write(f"size of token_ids: {token_ids_path.stat().st_size / (1024**2):.1f} MB")
+tqdm.write(f"size of token_ids: {token_ids_path.stat().st_size / (1024**2):.1f} MB")
 
 tqdm.write(f"\nnum mergers (encodings): {len(encodings):_}")
 tqdm.write(f"num tokens in vocab: {vocab_size:_}")
@@ -77,23 +82,27 @@ tqdm.write(f"num tokens in vocab: {vocab_size:_}")
 # hyperparams
 cfg = config["transformer"]
 
-batch_size        = int(cfg["batch_size"])
-d_model           = int(cfg["d_model"])
-dropout           = float(cfg["dropout"])
-early_stop_delta  = float(cfg["early_stop_delta"])
-early_stop_patience = int(cfg.get("early_stop_patience", 0))
-eval_batches      = int(cfg["eval_batches"])
-eval_every        = int(cfg["eval_every"])
-grad_accum_steps  = int(cfg["grad_accum_steps"])
-grad_clip         = float(cfg["grad_clip"])
-lr                = float(cfg["lr"])
-min_count         = int(cfg["min_count"])
-num_blocks        = int(cfg["num_blocks"])
-seq_len           = int(cfg["seq_len"])
-train_tokens      = float(cfg["train_tokens"])
-val_frac          = float(cfg["val_frac"])
-warmup_frac       = float(cfg["warmup_frac"])
-weight_decay      = float(cfg["weight_decay"])
+batch_size       = int(cfg["batch_size"])
+d_model          = int(cfg["d_model"])
+dropout          = float(cfg["dropout"])
+early_stop_delta = float(cfg["early_stop_delta"])
+early_stop_pat   = int(cfg["early_stop_pat"])
+eval_batches     = int(cfg["eval_batches"])
+eval_every       = int(cfg["eval_every"])
+grad_accum_steps = int(cfg["grad_accum_steps"])
+grad_clip        = float(cfg["grad_clip"])
+lr               = float(cfg["lr"])
+min_count        = int(cfg["min_count"])
+num_blocks       = int(cfg["num_blocks"])
+seq_len          = int(cfg["seq_len"])
+train_tokens     = float(cfg["train_tokens"])
+val_frac         = float(cfg["val_frac"])
+warmup_frac      = float(cfg["warmup_frac"])
+weight_decay     = float(cfg["weight_decay"])
+
+# dependent hyperparams
+d_ff = 4 * d_model
+num_heads = d_model // 64
 
 # NOTE on gradient accumulation: Forward and backprop for K micro-batches then
 # take the mean in performing the optimisation step.
@@ -103,10 +112,6 @@ weight_decay      = float(cfg["weight_decay"])
 
 # NOTE on weight decay: Just L2 reg. and not applied to bias/LN. Matrix weights
 # are what risk overfitting, not biases or LN parameters.
-
-# dependent hyperparams
-num_heads = d_model // 64 # so d_head = d_model / num_heads = 64
-d_ff = 4 * d_model
 
 # prune vocab of sufficiently-infrequent tokens
 keep_token_ids = [i for i in range(vocab_size) if int(vocab[str(i)]["count"]) >= min_count]
@@ -131,14 +136,7 @@ indeces_corpus_to_token = token_id_to_index[token_ids]
 indeces_corpus_to_token = indeces_corpus_to_token[indeces_corpus_to_token >= 0]
 tqdm.write(f"built indeces_corpus_to_token (length: {len(indeces_corpus_to_token):_})")
 
-# new training run if model_number not passed as argument
-if model_number is None:
-    model_number = len([p for p in run_dir.glob("training_run_*") if p.is_dir()]) + 1
-    resume = False
-else:
-    resume = True
-
-# bonus sanity checks and directory-related things
+# directory-related things and additional sanity checks
 training_run_dir = run_dir / f"training_run_{model_number}"
 training_run_dir.mkdir(parents=True, exist_ok=True)
 
@@ -147,23 +145,24 @@ meta_path = training_run_dir / "meta.json"
 metrics_path = training_run_dir / "metrics.csv"
 val_ppl_plot_path = training_run_dir / "val_ppl.svg"
 tqdm.write(f"\ntraining_run_dir: {os.path.relpath(training_run_dir, HERE)} (resume: {resume})")
-corpus_len = len(indeces_corpus_to_token)
 
 tokens_per_step = batch_size * seq_len * grad_accum_steps
 total_steps = int(math.ceil(train_tokens / tokens_per_step))
 warmup_steps = max(1, int(total_steps * warmup_frac))
 tqdm.write(f"\ntrain_tokens: {int(train_tokens):_}\ntokens_per_step: {tokens_per_step:_}\ntotal_steps: {total_steps:_}\nwarmup_steps: {warmup_steps:_}")
-tqdm.write(f"early_stop: delta={early_stop_delta}, patience={early_stop_patience}")
+tqdm.write(f"early_stop: delta={early_stop_delta}, patience={early_stop_pat}")
 
-# split corpus into train/val (contiguous split, LM-style)
-val_start = int(corpus_len * (1.0 - val_frac))
+# split corpus into training and validation
+corpus_len = len(indeces_corpus_to_token)
+val_start = int(corpus_len * (1 - val_frac))
+
 train_token_ids = indeces_corpus_to_token[:val_start]
 val_token_ids = indeces_corpus_to_token[val_start:]
-tqdm.write(f"\ntrain_len: {len(train_token_ids):_}")
-tqdm.write(f"val_len: {len(val_token_ids):_}")
+tqdm.write(f"\ntrain_len: {len(train_token_ids):_}, val_len: {len(val_token_ids):_}")
 
 # GPT-2-style weight-init (suggested to me) for stability
 # W elements ~ N(0, 0.02), biases = 0, layer norm scale = 1, shift = 0
+# Why 0.02? In the words of Neel Nanda: who knows, it works.
 def init_gpt2(m):
     if isinstance(m, nn.Linear):
         nn.init.normal_(m.weight, mean=0.0, std=0.02)
@@ -422,12 +421,12 @@ for step in pbar:
             val_nll=f"{val_nll:.3f}",
         )
         improvement = prev_best_val_ppl - val_ppl
-        if early_stop_patience > 0:
+        if early_stop_pat > 0:
             if improvement >= early_stop_delta:
                 no_improve_evals = 0
             else:
                 no_improve_evals += 1
-            if no_improve_evals >= early_stop_patience:
+            if no_improve_evals >= early_stop_pat:
                 early_stopped = True
                 break
         elif 0 < improvement <= early_stop_delta:
