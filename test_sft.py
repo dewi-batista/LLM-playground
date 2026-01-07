@@ -25,6 +25,7 @@ BATCH_INSTRUCTIONS = [
     "Give me 3 bullet points about neural networks.",
     "What is gradient descent?",
     "Write a Python function that returns factorial(n).",
+    "Write a story about Harry Potter",
 ]
 
 MAX_NEW_TOKENS = 50
