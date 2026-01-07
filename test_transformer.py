@@ -1,7 +1,6 @@
 from pathlib import Path
 
 import json
-import math
 import pickle
 import sys
 
@@ -67,25 +66,7 @@ def main():
         run_name = run_arg
     checkpoint_path = run_dir / run_name / "weights.ckpt"
 
-    print(f"device: {device} (cuda={torch.cuda.is_available()}, cuda_devices={torch.cuda.device_count()})")
-    if torch.cuda.is_available():
-        print(f"cuda[0]: {torch.cuda.get_device_name(0)}")
-    print(f"checkpoint: {checkpoint_path}")
-
     ckpt = torch.load(checkpoint_path, map_location="cpu", weights_only=False)
-
-    global_step = ckpt["global_step"]
-    total_steps = ckpt["total_steps"]
-    tokens_per_step = ckpt["tokens_per_step"]
-    train_tokens = ckpt["train_tokens"]
-    val_ppl = ckpt["val_ppl"]
-    best_val_ppl = ckpt["best_val_ppl"]
-
-    print(f"trained: global_step={int(global_step):_}/{int(total_steps):_}")
-    seen_tokens = int(float(global_step) * float(tokens_per_step))
-    print(f"tokens : seen~{seen_tokens:_} / budget={int(float(train_tokens)):_}")
-    print(f"val   : ppl={float(val_ppl):.2f} (nll={math.log(float(val_ppl)):.4f})")
-    print(f"best  : ppl={float(best_val_ppl):.2f} (nll={math.log(float(best_val_ppl)):.4f})")
 
     vocab_path = Path(ckpt["bpe_vocab_path"])
     encodings_path = Path(ckpt["bpe_encodings_path"])
@@ -106,7 +87,6 @@ def main():
     d_ff = int(ckpt["d_ff"])
     dropout = float(ckpt["dropout"])
     seq_len = int(ckpt["seq_len"])
-    print(f"arch: V={V}, d_model={d_model}, blocks={num_blocks}, heads={num_heads}, seq_len={seq_len}")
 
     E = nn.Embedding(V, d_model).to(device)
     final_lay_norm = nn.LayerNorm(d_model).to(device)
