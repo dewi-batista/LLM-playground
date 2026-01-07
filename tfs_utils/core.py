@@ -214,4 +214,3 @@ def next_token_logits(prompt_indeces, E, model, final_lay_norm, U, pe):
     x = torch.as_tensor(prompt_indeces, dtype=torch.long, device=E.weight.device).unsqueeze(0)  # (1, T)
     X = E(x) + pe[: x.shape[1]]
     return U(final_lay_norm(model(X)))[0, -1]  # (V,)
-

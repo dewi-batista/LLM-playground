@@ -8,7 +8,7 @@ import sys
 import torch
 import torch.nn as nn
 
-from tfs_utils.inference_scripts import (
+from tfs_utils.core import (
     TransformerBlock,
     build_token_id_to_index,
     encode_pre_tokens_to_indices,

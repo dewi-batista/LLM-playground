@@ -10,6 +10,8 @@ import pickle
 import re
 import sys
 
+from tfs_utils.core import iter_pre_tokens
+
 HERE = Path(__file__).resolve().parent
 MODELS_DIR = HERE / "models"
 MODELS_DIR.mkdir(parents=True, exist_ok=True)
@@ -22,21 +24,6 @@ MODELS_DIR.mkdir(parents=True, exist_ok=True)
 # IDs fit in uint16 ("H").
 vocab_size_max = 30_000
 stream_threshold_bytes = 512 * 1024**2 # 512 MB
-
-# pre-tokeniser applied one-by-one yielding a generator
-def iter_pre_tokens(corpus: str):
-    corpus = corpus.strip()
-    first = True
-    # "\S" ~ non-whitespace, "+" ~ multiple at once
-    for match in re.finditer(r"\S+", corpus):
-        # NOTE: .group(0) is the entire matched text, so each \S+ run. First
-        # token does not get pre-posed with a whitespace.
-        token = match.group(0)
-        if first:
-            yield token
-            first = False
-        else:
-            yield " " + token
 
 # streaming version of iter_pre_tokens() for large texts
 def pre_token_counts_from_path(corpus) -> Counter:

@@ -1,6 +1,6 @@
 from cache_tokenisation import load_or_create_token_ids
-from tfs_utils.checkpoint_safely import atomic_json_save, atomic_torch_save
 from tfs_utils.metrics import append_metrics_row, write_val_ppl_svg
+from tfs_utils.core import TransformerBlock, positional_encoding
 
 from pathlib import Path
 from tqdm import tqdm
@@ -131,7 +131,7 @@ indeces_corpus_to_token = token_id_to_index[token_ids]
 indeces_corpus_to_token = indeces_corpus_to_token[indeces_corpus_to_token >= 0]
 tqdm.write(f"built indeces_corpus_to_token (length: {len(indeces_corpus_to_token):_})")
 
-# new ckpt if model number not passed as argument
+# new training run if model_number not passed as argument
 if model_number is None:
     model_number = len([p for p in run_dir.glob("training_run_*") if p.is_dir()]) + 1
     resume = False
@@ -161,44 +161,6 @@ train_token_ids = indeces_corpus_to_token[:val_start]
 val_token_ids = indeces_corpus_to_token[val_start:]
 tqdm.write(f"\ntrain_len: {len(train_token_ids):_}")
 tqdm.write(f"val_len: {len(val_token_ids):_}")
-
-# architecture
-class TransformerBlock(nn.Module):
-    def __init__(self, d_model, d_ff, num_heads, dropout):
-        super().__init__()
-        assert d_model % num_heads == 0
-        self.num_heads = num_heads
-        self.d_head = d_model // num_heads
-
-        self.W_QKV = nn.Linear(d_model, 3 * d_model)
-        self.W_O = nn.Linear(d_model, d_model)
-
-        self.W_1 = nn.Linear(d_model, d_ff)
-        self.W_2 = nn.Linear(d_ff, d_model)
-
-        self.ln1 = nn.LayerNorm(d_model)
-        self.ln2 = nn.LayerNorm(d_model)
-
-        self.dropout_attn = nn.Dropout(dropout)
-        self.dropout_ffn = nn.Dropout(dropout)
-        self.act = nn.GELU()
-
-    def forward(self, X):
-        B, T, _ = X.shape
-        H = self.ln1(X)
-        Q, K, V = self.W_QKV(H).chunk(3, dim=-1)
-        Q = Q.reshape(B, T, self.num_heads, self.d_head).transpose(1, 2)
-        K = K.reshape(B, T, self.num_heads, self.d_head).transpose(1, 2)
-        V = V.reshape(B, T, self.num_heads, self.d_head).transpose(1, 2)
-
-        # regular attention just very-well optimised
-        O = F.scaled_dot_product_attention(Q, K, V, is_causal=True)
-        O = O.transpose(1, 2).reshape(B, T, self.num_heads * self.d_head)
-        X = X + self.dropout_attn(self.W_O(O))
-
-        H = self.ln2(X) # pre-addition LN -> more stable training
-        X = X + self.dropout_ffn(self.W_2(self.act(self.W_1(H))))
-        return X
 
 # GPT-2-style weight-init (suggested to me) for stability
 # W elements ~ N(0, 0.02), biases = 0, layer norm scale = 1, shift = 0
@@ -231,21 +193,6 @@ if not resume:
 
 # tie weights (makes U's weights point to E's weights)
 U.weight = E.weight
-
-# TODO: Move to ./utils and call. Swap to learned positional encodings soon?
-def positional_encoding(seq_len, d_model, device):
-    positions = torch.arange(seq_len, device=device, dtype=torch.float32).unsqueeze(1) # (n, 1)
-
-    i = torch.arange(d_model, device=device, dtype=torch.float32) # (d,)
-    div_term = torch.pow(10_000.0, (2 * (i // 2)) / d_model)
-
-    angles = positions / div_term # (n, d)
-
-    pe = torch.zeros_like(angles)
-    pe[:, 0::2] = torch.sin(angles[:, 0::2])
-    pe[:, 1::2] = torch.cos(angles[:, 1::2])
-
-    return pe
 
 # with fixed seq_len, positional encoding only needs to be computed once
 pe = positional_encoding(seq_len, d_model, device=device)
@@ -420,43 +367,44 @@ for step in pbar:
                 "rng_state_torch": torch.get_rng_state(),
                 "rng_state_cuda": torch.cuda.get_rng_state_all() if torch.cuda.is_available() else None,
             }
-            ok = atomic_torch_save(ckpt_obj, checkpoint_path)
-            if ok:
-                best_val_ppl = val_ppl
-                meta = {
-                    "language": language,
-                    "timestamp": timestamp,
-                    "model_number": model_number,
-                    "global_step": step + 1,
-                    "val_ppl": val_ppl,
-                    "best_val_ppl": val_ppl,
-                    "prev_best_val_ppl": prev_best_val_ppl,
-                    "train_tokens": int(train_tokens),
-                    "seen_tokens": int((step + 1) * tokens_per_step),
-                    "tokens_per_step": tokens_per_step,
-                    "total_steps": total_steps,
-                    "warmup_steps": warmup_steps,
-                    "d_model": d_model,
-                    "num_heads": num_heads,
-                    "num_blocks": num_blocks,
-                    "d_ff": d_ff,
-                    "seq_len": seq_len,
-                    "batch_size": batch_size,
-                    "dropout": dropout,
-                    "lr": lr,
-                    "weight_decay": weight_decay,
-                    "grad_clip": grad_clip,
-                    "grad_accum_steps": grad_accum_steps,
-                    "val_frac": val_frac,
-                    "eval_every": eval_every,
-                    "eval_batches": eval_batches,
-                    "vocabulary_path": str(vocab_path.relative_to(HERE)),
-                    "merges_path": str(encodings_path.relative_to(HERE)),
-                    "token_ids_path": str(token_ids_path.relative_to(HERE)),
-                    "checkpoint_path": str(checkpoint_path.relative_to(HERE)),
-                }
-                atomic_json_save(meta, meta_path)
-                tqdm.write(f"saved: {checkpoint_path} (step={step + 1}, val_ppl={val_ppl:.2f})")
+            torch.save(ckpt_obj, checkpoint_path)
+            best_val_ppl = val_ppl
+            meta = {
+                "language": language,
+                "timestamp": timestamp,
+                "model_number": model_number,
+                "global_step": step + 1,
+                "val_ppl": val_ppl,
+                "best_val_ppl": val_ppl,
+                "prev_best_val_ppl": prev_best_val_ppl,
+                "train_tokens": int(train_tokens),
+                "seen_tokens": int((step + 1) * tokens_per_step),
+                "tokens_per_step": tokens_per_step,
+                "total_steps": total_steps,
+                "warmup_steps": warmup_steps,
+                "d_model": d_model,
+                "num_heads": num_heads,
+                "num_blocks": num_blocks,
+                "d_ff": d_ff,
+                "seq_len": seq_len,
+                "batch_size": batch_size,
+                "dropout": dropout,
+                "lr": lr,
+                "weight_decay": weight_decay,
+                "grad_clip": grad_clip,
+                "grad_accum_steps": grad_accum_steps,
+                "val_frac": val_frac,
+                "eval_every": eval_every,
+                "eval_batches": eval_batches,
+                "vocabulary_path": str(vocab_path.relative_to(HERE)),
+                "merges_path": str(encodings_path.relative_to(HERE)),
+                "token_ids_path": str(token_ids_path.relative_to(HERE)),
+                "checkpoint_path": str(checkpoint_path.relative_to(HERE)),
+            }
+            with open(meta_path, "w") as f:
+                json.dump(meta, f, indent=2)
+                f.write("\n")
+            tqdm.write(f"saved: {checkpoint_path} (step={step + 1}, val_ppl={val_ppl:.2f})")
 
         append_metrics_row(
             metrics_path,
