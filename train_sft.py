@@ -62,7 +62,7 @@ config_path = HERE / "config.yaml"
 with open(config_path, "r") as f:
     config = yaml.safe_load(f)
 
-cfg = config["transformer"]
+cfg = config["sft"]
 batch_size        = int(cfg["batch_size"])
 seq_len           = int(cfg["seq_len"])
 dropout           = float(cfg["dropout"])

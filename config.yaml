@@ -16,3 +16,17 @@ transformer:
   val_frac: 0.1
   warmup_frac: 0.02
   weight_decay: 0.1
+
+sft:
+  batch_size: 1000
+  seq_len: 128
+  dropout: 0.1
+  eval_batches: 100
+  eval_every: 20
+  grad_accum_steps: 1
+  grad_clip: 1.0
+  lr: 1.0e-4
+  train_tokens: 1e7
+  val_frac: 0.1
+  warmup_frac: 0.02
+  weight_decay: 0.0
