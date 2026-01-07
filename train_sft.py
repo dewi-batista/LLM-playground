@@ -40,16 +40,17 @@ torch.backends.cudnn.allow_tf32 = True
 HERE = Path(__file__).resolve().parent
 run_dir = HERE / "models" / language / timestamp
 run_dir.mkdir(parents=True, exist_ok=True)
-base_ckpt_path = run_dir / f"training_run_{base_model_number}" / "weights.ckpt"
+base_run_dir = run_dir / f"training_run_{base_model_number}"
+base_ckpt_path = base_run_dir / "weights.ckpt"
 
 # new ckpt if model number not passed as argument
 if model_number is None:
-    model_number = len([p for p in run_dir.glob("sft_run_*") if p.is_dir()]) + 1
+    model_number = len([p for p in base_run_dir.glob("sft_run_*") if p.is_dir()]) + 1
     resume = False
 else:
     resume = True
 
-sft_run_dir = run_dir / f"sft_run_{model_number}"
+sft_run_dir = base_run_dir / f"sft_run_{model_number}"
 sft_run_dir.mkdir(parents=True, exist_ok=True)
 checkpoint_path = sft_run_dir / "weights.ckpt"
 meta_path = sft_run_dir / "meta.json"
@@ -91,6 +92,7 @@ tqdm.write(f"amp: {'bf16' if amp_enabled else 'off'}")
 tqdm.write(f"tf32: {'on' if torch.backends.cuda.matmul.allow_tf32 else 'off'}")
 
 tqdm.write(f"\nrun_dir: {os.path.relpath(run_dir, HERE)}")
+tqdm.write(f"base_run_dir: {os.path.relpath(base_run_dir, HERE)}")
 tqdm.write(f"config_path: {os.path.relpath(config_path, HERE)}")
 tqdm.write(f"base_ckpt: {os.path.relpath(base_ckpt_path, HERE)}")
 tqdm.write(f"sft_ckpt : {os.path.relpath(checkpoint_path, HERE)}")
