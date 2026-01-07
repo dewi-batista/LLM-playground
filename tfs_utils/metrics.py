@@ -63,32 +63,6 @@ def append_metrics_row(path: Path, row: dict) -> None:
     except Exception as e:
         tqdm.write(f"WARNING: metrics write failed: {e}")
 
-
-def load_val_ppl_history(path: Path) -> tuple[list[int], list[float]]:
-    if not path.exists():
-        return [], []
-    steps = []
-    val_ppls = []
-    with open(path, newline="") as f:
-        reader = csv.reader(f)
-        try:
-            header = next(reader)
-        except StopIteration:
-            return [], []
-        header = [re.sub(r"^[^A-Za-z_]+", "", h.strip()) for h in header]
-        idx_step = header.index("global_step") if "global_step" in header else None
-        idx_val = header.index("val_ppl") if "val_ppl" in header else None
-        if idx_step is None or idx_val is None:
-            return [], []
-        for cols in reader:
-            try:
-                steps.append(int(float(cols[idx_step])))
-                val_ppls.append(float(cols[idx_val]))
-            except Exception:
-                continue
-    return steps, val_ppls
-
-
 def atomic_text_save(text: str, path: Path) -> bool:
     tmp_path = path.with_suffix(path.suffix + ".tmp")
     try:

@@ -245,11 +245,9 @@ for step in pbar:
         group["lr"] = current_lr
     optimizer.zero_grad()
 
-    step_loss = 0.0
     for _ in range(grad_accum_steps):
         loss = batch_loss(train_ids, train_mask)
         (loss / grad_accum_steps).backward()
-        step_loss += float(loss.detach())
     torch.nn.utils.clip_grad_norm_(params, grad_clip)
     optimizer.step()
 

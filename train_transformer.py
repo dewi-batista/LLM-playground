@@ -285,7 +285,6 @@ for step in pbar:
         group["lr"] = current_lr
     optimizer.zero_grad()
 
-    step_loss = 0.0
     for _ in range(grad_accum_steps):
         # sample batch of token sequences (t_i, ..., t_{i + seq_len - 1})
         window_start_idx = np.random.randint(0, len(train_token_ids) - seq_len - 1, size=batch_size)
@@ -300,7 +299,6 @@ for step in pbar:
             logits = U(final_lay_norm(model(X)))
             loss = F.cross_entropy(logits.reshape(-1, V), targets.reshape(-1))
         (loss / grad_accum_steps).backward()
-        step_loss += float(loss.detach())
     torch.nn.utils.clip_grad_norm_(params, grad_clip)
     optimizer.step()
 
