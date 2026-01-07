@@ -56,12 +56,16 @@ NO_REPEAT_NGRAM = 3
 def main():
     language = sys.argv[1]
     timestamp = sys.argv[2]
-    model_number = int(sys.argv[3])
+    run_arg = sys.argv[3]
 
     device = torch.device("cuda") if torch.cuda.is_available() else torch.device("cpu")
 
     run_dir = MODELS_DIR / language / timestamp
-    checkpoint_path = run_dir / f"training_run_{model_number}" / "weights.ckpt"
+    if run_arg.isdigit():
+        run_name = f"training_run_{int(run_arg)}"
+    else:
+        run_name = run_arg
+    checkpoint_path = run_dir / run_name / "weights.ckpt"
 
     print(f"device: {device} (cuda={torch.cuda.is_available()}, cuda_devices={torch.cuda.device_count()})")
     if torch.cuda.is_available():

@@ -21,7 +21,7 @@ import yaml
 
 # CLI-related
 if len(sys.argv) < 4 or sys.argv[1] in {"-h", "--help"}:
-    print(f"usage: python {Path(__file__).name} <language> <vocab_timestamp> <base_model_number> [model_number]\n")
+    print(f"usage: python {Path(__file__).name} <language> <vocab_timestamp> <base_model_number> [sft_run_number]\n")
     raise SystemExit(1)
 args = sys.argv[1:]
 language = args[0]
@@ -44,18 +44,18 @@ base_ckpt_path = run_dir / f"training_run_{base_model_number}" / "weights.ckpt"
 
 # new ckpt if model number not passed as argument
 if model_number is None:
-    model_number = len([p for p in run_dir.glob("training_run_*") if p.is_dir()]) + 1
+    model_number = len([p for p in run_dir.glob("sft_run_*") if p.is_dir()]) + 1
     resume = False
 else:
     resume = True
 
-training_run_dir = run_dir / f"training_run_{model_number}"
-training_run_dir.mkdir(parents=True, exist_ok=True)
-checkpoint_path = training_run_dir / "weights.ckpt"
-meta_path = training_run_dir / "meta.json"
-metrics_path = training_run_dir / "metrics.csv"
-val_ppl_plot_path = training_run_dir / "val_ppl.svg"
-tqdm.write(f"\ntraining_run_dir: {os.path.relpath(training_run_dir, HERE)} (resume: {resume})")
+sft_run_dir = run_dir / f"sft_run_{model_number}"
+sft_run_dir.mkdir(parents=True, exist_ok=True)
+checkpoint_path = sft_run_dir / "weights.ckpt"
+meta_path = sft_run_dir / "meta.json"
+metrics_path = sft_run_dir / "metrics.csv"
+val_ppl_plot_path = sft_run_dir / "val_ppl.svg"
+tqdm.write(f"\nsft_run_dir: {os.path.relpath(sft_run_dir, HERE)} (resume: {resume})")
 
 config_path = HERE / "config.yaml"
 with open(config_path, "r") as f:
