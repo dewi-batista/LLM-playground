@@ -237,9 +237,9 @@ if resume:
     
     tqdm.write(f"\nresuming from: {os.path.relpath(checkpoint_path, HERE)}\n(start step: {start_step:_})")
 
-def eval_nll(token_ids): # eval NLL on random batches (dropout off)
+def eval_nll(token_ids, desc): # eval NLL on random batches (dropout off)
     total_loss = 0.0
-    for _ in range(eval_batches):
+    for _ in tqdm(range(eval_batches), desc=desc, unit="batch", leave=False):
         window_start_idx = np.random.randint(0, len(token_ids) - seq_len - 1, size=batch_size)
         context_window = token_ids[window_start_idx[:, None] + offsets[None, :]]
         targets = token_ids[window_start_idx[:, None] + offsets[None, :] + 1]
@@ -305,8 +305,8 @@ for step in pbar:
         dropout_embed.eval()
 
         with torch.inference_mode():
-            train_nll = eval_nll(train_token_ids)
-            val_nll = eval_nll(val_token_ids)
+            train_nll = eval_nll(train_token_ids, "eval train")
+            val_nll = eval_nll(val_token_ids, "eval val")
 
         E.train()
         model.train()

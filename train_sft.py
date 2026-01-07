@@ -252,9 +252,9 @@ def batch_loss(token_ids, token_mask):
     return loss_sum / denom
 
 
-def eval_nll(token_ids, token_mask):
+def eval_nll(token_ids, token_mask, desc):
     total_loss = 0.0
-    for _ in range(eval_batches):
+    for _ in tqdm(range(eval_batches), desc=desc, unit="batch", leave=False):
         total_loss += float(batch_loss(token_ids, token_mask))
     return total_loss / eval_batches
 
@@ -295,8 +295,8 @@ for step in pbar:
         dropout_embed.eval()
 
         with torch.inference_mode():
-            train_nll = eval_nll(train_ids, train_mask)
-            val_nll = eval_nll(val_ids, val_mask)
+            train_nll = eval_nll(train_ids, train_mask, "eval train")
+            val_nll = eval_nll(val_ids, val_mask, "eval val")
 
         E.train()
         model.train()
