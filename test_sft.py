@@ -1,13 +1,4 @@
 from pathlib import Path
-
-import json
-import math
-import pickle
-import sys
-
-import torch
-import torch.nn as nn
-
 from tfs_utils.core import (
     TransformerBlock,
     build_token_id_to_index,
@@ -18,6 +9,14 @@ from tfs_utils.core import (
     positional_encoding,
     sample_next_token,
 )
+
+import json
+import math
+import pickle
+import sys
+
+import torch
+import torch.nn as nn
 
 HERE = Path(__file__).resolve().parent
 MODELS_DIR = HERE / "models"
@@ -30,14 +29,11 @@ BATCH_INSTRUCTIONS = [
     "Write a Python function that returns factorial(n).",
 ]
 
-MAX_NEW_TOKENS = 200
-
-# decoding knobs
+MAX_NEW_TOKENS = 50
+NO_REPEAT_NGRAM = 3
+REPETITION_PENALTY = 1.1
 SAMPLE = True
 TEMPERATURE = 0.7
-REPETITION_PENALTY = 1.1
-NO_REPEAT_NGRAM = 3
-
 
 def main():
     if len(sys.argv) < 5:
@@ -52,16 +48,14 @@ def main():
     device = torch.device("cuda") if torch.cuda.is_available() else torch.device("cpu")
 
     run_dir = MODELS_DIR / language / timestamp
-    checkpoint_path = (
-        run_dir / f"training_run_{base_model_number}" / f"sft_run_{sft_run_number}" / "weights.ckpt"
-    )
+    ckpt_path = (run_dir / f"training_run_{base_model_number}" / f"sft_run_{sft_run_number}" / "weights.ckpt")
 
     print(f"device: {device} (cuda={torch.cuda.is_available()}, cuda_devices={torch.cuda.device_count()})")
     if torch.cuda.is_available():
         print(f"cuda[0]: {torch.cuda.get_device_name(0)}")
-    print(f"checkpoint: {checkpoint_path}")
+    print(f"checkpoint: {ckpt_path}")
 
-    ckpt = torch.load(checkpoint_path, map_location="cpu", weights_only=False)
+    ckpt = torch.load(ckpt_path, map_location="cpu", weights_only=False)
 
     global_step = ckpt["global_step"]
     total_steps = ckpt["total_steps"]
@@ -97,25 +91,25 @@ def main():
     seq_len = int(ckpt["seq_len"])
     print(f"arch: V={V}, d_model={d_model}, blocks={num_blocks}, heads={num_heads}, seq_len={seq_len}")
 
+    # architecture
     E = nn.Embedding(V, d_model).to(device)
     final_lay_norm = nn.LayerNorm(d_model).to(device)
-    model = nn.Sequential(*[TransformerBlock(d_model, d_ff, num_heads, dropout) for _ in range(num_blocks)]).to(
-        device
-    )
+    model = nn.Sequential(*[TransformerBlock(d_model, d_ff, num_heads, dropout) for _ in range(num_blocks)]).to(device)
     U = nn.Linear(d_model, V, bias=False).to(device)
     U.weight = E.weight
 
+    # load ckpt weights
     E.load_state_dict(ckpt["E_state_dict"])
     model.load_state_dict(ckpt["model_state_dict"])
     final_lay_norm.load_state_dict(ckpt["final_lay_norm_state_dict"])
 
+    # set eval mode
     E.eval()
     model.eval()
     final_lay_norm.eval()
     U.eval()
 
     pe = positional_encoding(seq_len, d_model, device=device)
-
     for instruction in BATCH_INSTRUCTIONS:
         prompt = f"Instruction: {instruction.strip()} Response:"
         pre_tokens = list(iter_pre_tokens(prompt))
@@ -134,12 +128,9 @@ def main():
                 no_repeat_ngram=NO_REPEAT_NGRAM,
             )
             indeces.append(next_idx)
-
         response = "".join(index_to_token[i] for i in indeces[len(prompt_indeces) :])
-        print(f"\nInstruction: {instruction}")
-        print(f"Response:{response}")
-
+        print(f"\n{instruction}")
+        print(response)
 
 if __name__ == "__main__":
     main()
-
