@@ -1,3 +1,5 @@
+# NOTE: This is written assuming that a CUDA device is available.
+
 from cache_tokenisation import load_or_create_token_ids
 from tfs_utils.core import TransformerBlock, positional_encoding
 from tfs_utils.metrics import append_metrics_row, write_val_ppl_svg
@@ -28,12 +30,11 @@ timestamp = args[1]
 model_number = int(args[2]) if len(args) > 2 else None
 
 # device-related
-device = torch.device("cuda") if torch.cuda.is_available() else torch.device("cpu")
+device = torch.device("cuda")
 amp_enabled = (device.type == "cuda")
 amp_dtype = torch.bfloat16
-if device.type == "cuda": # TF32 -> faster, lower precision
-    torch.backends.cuda.matmul.allow_tf32 = True
-    torch.backends.cudnn.allow_tf32 = True
+torch.backends.cuda.matmul.allow_tf32 = True
+torch.backends.cudnn.allow_tf32 = True
 
 # directory-related
 HERE = Path(__file__).resolve().parent
@@ -61,6 +62,16 @@ if model_number is None:
     resume = False
 else:
     resume = True
+
+#
+training_run_dir = run_dir / f"training_run_{model_number}"
+training_run_dir.mkdir(parents=True, exist_ok=True)
+
+checkpoint_path = training_run_dir / "weights.ckpt"
+meta_path = training_run_dir / "meta.json"
+metrics_path = training_run_dir / "metrics.csv"
+val_ppl_plot_path = training_run_dir / "val_ppl.svg"
+tqdm.write(f"\ntraining_run_dir: {os.path.relpath(training_run_dir, HERE)} (resume: {resume})")
 
 # sanity checks
 tqdm.write(f"\n\navailable: {device} (cuda={torch.cuda.is_available()}, cuda_devices={torch.cuda.device_count()})")
@@ -131,34 +142,34 @@ token_ids = load_or_create_token_ids(
 token_id_to_index = np.full(vocab_size, -1, dtype=np.int32)
 for i, token_id in enumerate(keep_token_ids):
     token_id_to_index[token_id] = i
-tqdm.write("\nbuilding indeces_corpus_to_token")
 indeces_corpus_to_token = token_id_to_index[token_ids]
 indeces_corpus_to_token = indeces_corpus_to_token[indeces_corpus_to_token >= 0]
-tqdm.write(f"built indeces_corpus_to_token (length: {len(indeces_corpus_to_token):_})")
 
-# directory-related things and additional sanity checks
-training_run_dir = run_dir / f"training_run_{model_number}"
-training_run_dir.mkdir(parents=True, exist_ok=True)
-
-checkpoint_path = training_run_dir / "weights.ckpt"
-meta_path = training_run_dir / "meta.json"
-metrics_path = training_run_dir / "metrics.csv"
-val_ppl_plot_path = training_run_dir / "val_ppl.svg"
-tqdm.write(f"\ntraining_run_dir: {os.path.relpath(training_run_dir, HERE)} (resume: {resume})")
-
+# step count computations
 tokens_per_step = batch_size * seq_len * grad_accum_steps
 total_steps = int(math.ceil(train_tokens / tokens_per_step))
 warmup_steps = max(1, int(total_steps * warmup_frac))
-tqdm.write(f"\ntrain_tokens: {int(train_tokens):_}\ntokens_per_step: {tokens_per_step:_}\ntotal_steps: {total_steps:_}\nwarmup_steps: {warmup_steps:_}")
-tqdm.write(f"early_stop: delta={early_stop_delta}, patience={early_stop_pat}")
 
 # split corpus into training and validation
 corpus_len = len(indeces_corpus_to_token)
 val_start = int(corpus_len * (1 - val_frac))
-
 train_token_ids = indeces_corpus_to_token[:val_start]
 val_token_ids = indeces_corpus_to_token[val_start:]
+
+# additional sanity checks
+tqdm.write(f"built indeces_corpus_to_token (length: {len(indeces_corpus_to_token):_})")
+
+tqdm.write(f"\ntrain_tokens: {int(train_tokens):_}\ntokens_per_step: {tokens_per_step:_}\ntotal_steps: {total_steps:_}\nwarmup_steps: {warmup_steps:_}")
+tqdm.write(f"early_stop: delta={early_stop_delta}, patience={early_stop_pat}")
+
 tqdm.write(f"\ntrain_len: {len(train_token_ids):_}, val_len: {len(val_token_ids):_}")
+
+# the model begins...
+dropout_embed = nn.Dropout(dropout).to(device)
+E = nn.Embedding(V, d_model).to(device)
+final_lay_norm = nn.LayerNorm(d_model).to(device)
+model = nn.Sequential(*[TransformerBlock(d_model, d_ff, num_heads, dropout) for _ in range(num_blocks)]).to(device)
+U = nn.Linear(d_model, V, bias=False).to(device)
 
 # GPT-2-style weight-init (suggested to me) for stability
 # W elements ~ N(0, 0.02), biases = 0, layer norm scale = 1, shift = 0
@@ -174,12 +185,6 @@ def init_gpt2(m):
         nn.init.ones_(m.weight)
         nn.init.zeros_(m.bias)
 
-dropout_embed = nn.Dropout(dropout).to(device)
-E = nn.Embedding(V, d_model).to(device)
-final_lay_norm = nn.LayerNorm(d_model).to(device)
-model = nn.Sequential(*[TransformerBlock(d_model, d_ff, num_heads, dropout) for _ in range(num_blocks)]).to(device)
-U = nn.Linear(d_model, V, bias=False).to(device)
-
 if not resume:
     E.apply(init_gpt2)
     model.apply(init_gpt2)
@@ -190,64 +195,50 @@ if not resume:
         block.W_O.weight.data /= resid_scale
         block.W_2.weight.data /= resid_scale
 
-# tie weights (makes U's weights point to E's weights)
+# weight tying
 U.weight = E.weight
-
-# with fixed seq_len, positional encoding only needs to be computed once
-pe = positional_encoding(seq_len, d_model, device=device)
 
 # NOTE: Does not include U.parameters() due to weight tying.
 params = list(E.parameters()) + list(model.parameters()) + list(final_lay_norm.parameters())
+
+# parameter decay and optimiser (fused Adam for now)
 decay_params = [p for p in params if p.ndim >= 2]
-no_decay_params = [p for p in params if p.ndim < 2]
-adamw_sig = inspect.signature(torch.optim.AdamW)
-# very well-optimised AdamW
-fused_adamw = device.type == "cuda" and ("fused" in adamw_sig.parameters)
-optimizer_kwargs = {"lr": lr, "betas": (0.9, 0.95), "eps": 1e-8}
-if fused_adamw:
-    optimizer_kwargs["fused"] = True
+non_decay_params = [p for p in params if p.ndim < 2]
 optimizer = torch.optim.AdamW(
     [
         {"params": decay_params, "weight_decay": weight_decay},
-        {"params": no_decay_params, "weight_decay": 0.0},
+        {"params": non_decay_params, "weight_decay": 0.0},
     ],
-    **optimizer_kwargs,
+    lr=lr,
+    betas=(0.9, 0.95),
+    eps=1e-8,
+    fused=True, # assumes CUDA device + recent PyTorch version
 )
 
-start_step = 0
+# NOTE: The if statement inside checks if the checkpoint was saved with
+# torch.compile(model) in use. If so then the relevant prefixes are removed.
 best_val_ppl = float("inf")
+start_step = 0
 if resume:
-    assert checkpoint_path.exists()
     ckpt = torch.load(checkpoint_path, map_location=device, weights_only=False)
-    E.load_state_dict(ckpt["E_state_dict"])
     model_state_dict = ckpt["model_state_dict"]
-    # if checkpoint was saved from torch.compile(model)
     if len(model_state_dict) > 0 and next(iter(model_state_dict.keys())).startswith("_orig_mod."):
         model_state_dict = {k.removeprefix("_orig_mod."): v for k, v in model_state_dict.items()}
+
+    E.load_state_dict(ckpt["E_state_dict"])
     model.load_state_dict(model_state_dict)
     final_lay_norm.load_state_dict(ckpt["final_lay_norm_state_dict"])
     optimizer.load_state_dict(ckpt["optimizer_state_dict"])
     start_step = int(ckpt.get("global_step", 0))
     best_val_ppl = float(ckpt.get("best_val_ppl", float("inf")))
-
     random.setstate(ckpt["rng_state_py"])
     np.random.set_state(ckpt["rng_state_np"])
     torch.set_rng_state(ckpt["rng_state_torch"].cpu())
-    if torch.cuda.is_available() and ckpt["rng_state_cuda"] is not None:
-        torch.cuda.set_rng_state_all([s.cpu() for s in ckpt["rng_state_cuda"]])
+    torch.cuda.set_rng_state_all([s.cpu() for s in ckpt["rng_state_cuda"]])
+    
     tqdm.write(f"\nresuming from: {os.path.relpath(checkpoint_path, HERE)}\n(start step: {start_step:_})")
 
-# torch.compile (faster training)
-compile_enabled = (device.type == "cuda" and hasattr(torch, "compile"))
-tqdm.write(f"\nadamw_fused: {'on' if fused_adamw else 'off'}")
-if compile_enabled:
-    tqdm.write("torch.compile: on\n")
-    model = torch.compile(model, mode="reduce-overhead")
-
-offsets = np.arange(seq_len, dtype=np.int64)
-
-# eval NLL on random batches (dropout off)
-def eval_nll(token_ids):
+def eval_nll(token_ids): # eval NLL on random batches (dropout off)
     total_loss = 0.0
     for _ in range(eval_batches):
         window_start_idx = np.random.randint(0, len(token_ids) - seq_len - 1, size=batch_size)
@@ -258,18 +249,23 @@ def eval_nll(token_ids):
         targets = torch.as_tensor(targets, dtype=torch.long, device=device)
 
         with torch.autocast(device_type=device.type, dtype=amp_dtype, enabled=amp_enabled):
-            X = dropout_embed(E(context_window) + pe)
+            X = dropout_embed(E(context_window) + pos_embedding)
             logits = U(final_lay_norm(model(X)))
             loss = F.cross_entropy(logits.reshape(-1, V), targets.reshape(-1))
         total_loss += float(loss)
 
     return total_loss / eval_batches
 
+model = torch.compile(model, mode="reduce-overhead")
+offsets = np.arange(seq_len, dtype=np.int64)
+pos_embedding = positional_encoding(seq_len, d_model, device=device)
+
+early_stopped = False
+no_improve_evals = 0
+pbar = tqdm(range(start_step, total_steps), desc="Train", unit=" batch", total=total_steps, initial=start_step)
 train_nll = None
 val_nll = None
-no_improve_evals = 0
-early_stopped = False
-pbar = tqdm(range(start_step, total_steps), desc="Train", unit=" batch", total=total_steps, initial=start_step)
+
 for step in pbar:
 
     # update lr of all parmams: warmup -> cosine decay
@@ -294,7 +290,7 @@ for step in pbar:
         targets = torch.as_tensor(targets, dtype=torch.long, device=device)
 
         with torch.autocast(device_type=device.type, dtype=amp_dtype, enabled=amp_enabled):
-            X = dropout_embed(E(context_window) + pe)
+            X = dropout_embed(E(context_window) + pos_embedding)
             logits = U(final_lay_norm(model(X)))
             loss = F.cross_entropy(logits.reshape(-1, V), targets.reshape(-1))
         (loss / grad_accum_steps).backward()
