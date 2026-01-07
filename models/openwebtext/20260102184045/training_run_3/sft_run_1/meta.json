@@ -1,0 +1,18 @@
+{
+  "stage": "sft",
+  "dataset": "tatsu-lab/alpaca",
+  "language": "openwebtext",
+  "timestamp": "20260102184045",
+  "base_model_number": 3,
+  "model_number": 2,
+  "global_step": 200,
+  "train_nll": 2.451977550983429,
+  "val_nll": 2.768950924873352,
+  "val_ppl": 15.941900982435111,
+  "best_val_ppl": 15.941900982435111,
+  "seen_tokens": 9600000,
+  "tokens_per_step": 48000,
+  "total_steps": 209,
+  "warmup_steps": 4,
+  "checkpoint_path": "models/openwebtext/20260102184045/training_run_3/sft_run_2/weights.ckpt"
+}
