@@ -1,5 +1,3 @@
-# TODO: Learned positional encoding (this was an option this whole time???).
-
 from cache_tokenisation import load_or_create_token_ids
 from tfs_utils.checkpoint_safely import atomic_json_save, atomic_torch_save
 from tfs_utils.metrics import append_metrics_row, write_val_ppl_svg
@@ -113,7 +111,7 @@ d_ff = 4 * d_model
 # prune vocab of sufficiently-infrequent tokens
 keep_token_ids = [i for i in range(vocab_size) if int(vocab[str(i)]["count"]) >= min_count]
 index_to_token = [vocab[str(i)]["string"] for i in keep_token_ids]
-V = len(index_to_token) # TODO: understand discrepancy between vocab_size and V
+V = len(index_to_token) # TODO: Understand discrepancy between vocab_size and V.
 
 token_ids = load_or_create_token_ids(
     language,
