@@ -70,7 +70,11 @@ def load_or_create_token_ids(language, timestamp, corpus_path=None, token_ids_pa
     else:
         with open(corpus_path) as f:
             f.seek(file_pos)
-            for line in tqdm(f, desc=f"tokenising {language}", unit="line", initial=lines_done):
+            pbar = tqdm(desc=f"tokenising {language}", unit="line", initial=lines_done)
+            while True:
+                line = f.readline()
+                if not line:
+                    break
                 for match in re.finditer(r"\S+", line):
                     tok = match.group(0)
                     if first:
@@ -82,12 +86,14 @@ def load_or_create_token_ids(language, timestamp, corpus_path=None, token_ids_pa
                     token_ids[pos : pos + len(ids)] = ids
                     pos += len(ids)
                 lines_done += 1
+                pbar.update(1)
                 if lines_done % save_every_lines == 0:
                     token_ids.flush()
                     file_pos = f.tell()
                     with open(state_path, "w") as out:
                         json.dump({"pos": pos, "lines_done": lines_done, "file_pos": file_pos, "first": first}, out)
                         out.write("\n")
+            pbar.close()
 
     token_ids.flush()
     del token_ids
