@@ -22,14 +22,14 @@ def iter_pre_tokens(text: str):
             yield " " + tok
 
 
-def make_bpe_encoder(encodings):
+def make_bpe_encoder(encodings, cache: bool = True):
     merges = {tuple(pair): new_token for pair, new_token in encodings}
     ranks = {tuple(pair): i for i, (pair, _) in enumerate(encodings)}
-    cache = {}
+    cache_dict = {} if cache else None
 
     def encode(text: str):
-        if text in cache:
-            return cache[text]
+        if cache_dict is not None and text in cache_dict:
+            return cache_dict[text]
         ids = list(text.encode("utf-8"))
         while True:
             best_pair = None
@@ -54,7 +54,8 @@ def make_bpe_encoder(encodings):
                     merged.append(ids[i])
                     i += 1
             ids = merged
-        cache[text] = ids
+        if cache_dict is not None:
+            cache_dict[text] = ids
         return ids
 
     return encode
