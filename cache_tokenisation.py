@@ -20,9 +20,8 @@ def load_or_create_token_ids(language, timestamp, corpus_path=None, token_ids_pa
     corpus_path = corpus_path or (HERE / "data" / f"{language}.txt")
     token_ids_path = token_ids_path or (run_dir / "token_ids.npy")
     state_path = run_dir / "token_ids_state.json"
-    done_path = run_dir / "token_ids_done.json"
 
-    if token_ids_path.exists() and done_path.exists() and not state_path.exists():
+    if token_ids_path.exists() and not state_path.exists():
         return np.load(token_ids_path, mmap_mode="r")
 
     streaming = corpus_path.stat().st_size >= stream_threshold_bytes
@@ -93,9 +92,6 @@ def load_or_create_token_ids(language, timestamp, corpus_path=None, token_ids_pa
     token_ids.flush()
     del token_ids
     state_path.unlink(missing_ok=True)
-    with open(done_path, "w") as f:
-        json.dump({"pos": pos, "lines_done": lines_done}, f)
-        f.write("\n")
     return np.load(token_ids_path, mmap_mode="r")
 
 if __name__ == "__main__":
