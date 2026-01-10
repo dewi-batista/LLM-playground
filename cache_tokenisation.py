@@ -11,7 +11,7 @@ from tfs_utils.core import iter_pre_tokens, make_bpe_encoder
 
 HERE = Path(__file__).resolve().parent
 stream_threshold_bytes = 512 * 1024**2 # 512 MB
-save_every_lines = 5_000_000
+save_every_lines = 1_000_000
 
 def load_or_create_token_ids(language, timestamp, corpus_path=None, token_ids_path=None, encodings=None, vocab=None):
     run_dir = HERE / "models" / language / timestamp
@@ -40,7 +40,7 @@ def load_or_create_token_ids(language, timestamp, corpus_path=None, token_ids_pa
 
     vocab_size = len(vocab)
     total_token_ids = sum(int(info["count"]) for info in vocab.values())
-    dtype = np.uint16 if vocab_size < 65_536 else np.int32
+    dtype = np.uint16
     pos = 0
     lines_done = 0
     file_pos = 0
