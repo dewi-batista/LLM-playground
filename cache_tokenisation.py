@@ -177,6 +177,8 @@ def stitch_token_ids(language, timestamp, *, token_ids_path=None):
     token_ids = np.lib.format.open_memmap(token_ids_path, mode="w+", dtype=dtype, shape=(total,))
     pos = 0
     for p, n in zip(chunk_paths, chunk_lens):
+        if n == 0:
+            continue
         chunk = np.memmap(p, dtype=dtype, mode="r", shape=(n,))
         token_ids[pos : pos + n] = chunk
         pos += n
