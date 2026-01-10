@@ -26,6 +26,29 @@ def _chunk_start(f, start):
         f.readline()
 
 
+def _aligned_start_offset(path: Path, start: int) -> int:
+    with open(path, "rb") as f:
+        _chunk_start(f, start)
+        return f.tell()
+
+
+def _count_newlines(path: Path, start: int, end: int) -> int:
+    if end <= start:
+        return 0
+    total = 0
+    block = 8 * 1024 * 1024
+    with open(path, "rb") as f:
+        f.seek(start)
+        remaining = end - start
+        while remaining > 0:
+            buf = f.read(min(block, remaining))
+            if not buf:
+                break
+            total += buf.count(b"\n")
+            remaining -= len(buf)
+    return total
+
+
 def cache_token_ids_chunk(language, timestamp, chunk_idx, *, corpus_path=None, encodings=None, vocab=None):
     run_dir = HERE / "models" / language / timestamp
     run_dir.mkdir(parents=True, exist_ok=True)
@@ -60,12 +83,30 @@ def cache_token_ids_chunk(language, timestamp, chunk_idx, *, corpus_path=None, e
     file_pos = start
     lines_done = 0
     first = (int(chunk_idx) == 0)
+    total_lines = None
     if chunk_state_path.exists():
         with open(chunk_state_path) as f:
             state = json.load(f)
         file_pos = int(state["file_pos"])
         lines_done = int(state["lines_done"])
         first = bool(state["first"])
+        total_lines = state.get("total_lines", None)
+
+    if total_lines is None:
+        aligned_start = 0 if int(chunk_idx) == 0 else _aligned_start_offset(corpus_path, start)
+        end_for_count = file_size if int(chunk_idx) == (num_chunks - 1) else end
+        total_lines = _count_newlines(corpus_path, aligned_start, end_for_count)
+        if aligned_start < end_for_count and file_size > 0:
+            if int(chunk_idx) == (num_chunks - 1):
+                with open(corpus_path, "rb") as f:
+                    f.seek(file_size - 1)
+                    if f.read(1) != b"\n":
+                        total_lines += 1
+            else:
+                with open(corpus_path, "rb") as f:
+                    f.seek(end - 1)
+                    if f.read(1) != b"\n":
+                        total_lines += 1
 
     chunk_path.parent.mkdir(parents=True, exist_ok=True)
 
@@ -73,7 +114,12 @@ def cache_token_ids_chunk(language, timestamp, chunk_idx, *, corpus_path=None, e
         f.seek(file_pos)
         if not chunk_state_path.exists():
             _chunk_start(f, start)
-        pbar = tqdm(desc=f"tokenising {language} chunk {int(chunk_idx)+1}/{num_chunks}", unit="line", initial=lines_done)
+        pbar = tqdm(
+            desc=f"tokenising {language} chunk {int(chunk_idx)+1}/{num_chunks}",
+            unit="line",
+            initial=lines_done,
+            total=total_lines,
+        )
         while True:
             pos_before = f.tell()
             if int(chunk_idx) != (num_chunks - 1) and pos_before >= end:
@@ -94,7 +140,15 @@ def cache_token_ids_chunk(language, timestamp, chunk_idx, *, corpus_path=None, e
                 out.flush()
                 file_pos = f.tell()
                 with open(chunk_state_path, "w") as s:
-                    json.dump({"file_pos": file_pos, "lines_done": lines_done, "first": first}, s)
+                    json.dump(
+                        {
+                            "file_pos": file_pos,
+                            "lines_done": lines_done,
+                            "first": first,
+                            "total_lines": total_lines,
+                        },
+                        s,
+                    )
                     s.write("\n")
         pbar.close()
 
