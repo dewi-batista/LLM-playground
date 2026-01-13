@@ -28,6 +28,7 @@ This repository contains my implementation of modern LLM-related things. The int
 - [x] Simple SFT generation test
 
 **Next**
+- [ ] Try out learned positional encoding and rotary positional embeddings (RoPE)
 - [ ] Instruction tuning + prompt formatting (chat template)
 - [ ] RL-based alignment (e.g. preference optimisation / RLHF-style methods)
 - [ ] Safety filtering and dataset curation
