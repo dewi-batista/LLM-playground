@@ -1,13 +1,13 @@
 {
   "language": "openwebtext",
   "timestamp": "20260102184045",
-  "model_number": 2,
-  "global_step": 153000,
-  "val_ppl": 51.6861572070805,
-  "best_val_ppl": 51.6861572070805,
-  "prev_best_val_ppl": 51.99795386556681,
+  "model_number": 3,
+  "global_step": 202000,
+  "val_ppl": 48.75643397646813,
+  "best_val_ppl": 48.75643397646813,
+  "prev_best_val_ppl": 48.86750185200153,
   "train_tokens": 10000000000,
-  "seen_tokens": 7344000000,
+  "seen_tokens": 9696000000,
   "tokens_per_step": 48000,
   "total_steps": 208334,
   "warmup_steps": 4166,
@@ -24,9 +24,9 @@
   "grad_accum_steps": 1,
   "val_frac": 0.1,
   "eval_every": 1000,
-  "eval_batches": 100,
+  "eval_batches": 50,
   "vocabulary_path": "models/openwebtext/20260102184045/vocabulary.json",
   "merges_path": "models/openwebtext/20260102184045/merges.pkl",
   "token_ids_path": "models/openwebtext/20260102184045/token_ids.npy",
-  "checkpoint_path": "models/openwebtext/20260102184045/training_run_2/weights.ckpt"
+  "checkpoint_path": "models/openwebtext/20260102184045/training_run_3/weights.ckpt"
 }
