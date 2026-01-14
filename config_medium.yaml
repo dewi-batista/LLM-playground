@@ -1,0 +1,36 @@
+transformer:
+  batch_size: 200
+  d_model: 1024
+  dropout: 0.1
+  early_stop_delta: 0.1
+  early_stop_pat: 10
+  eval_batches: 50
+  eval_every: 1000
+  grad_checkpoint: false
+  grad_accum_steps: 1
+  grad_clip: 1.0
+  lr: 2.5e-4
+  min_count: 5
+  num_blocks: 24
+  seq_len: 128
+  train_tokens: 1e10
+  val_frac: 0.1
+  warmup_frac: 0.02
+  weight_decay: 0.1
+
+sft:
+  batch_size: 375
+  seq_len: 128
+  dropout: 0.1
+  early_stop_delta: 0.1
+  early_stop_pat: 10
+  eval_batches: 50
+  eval_every: 100
+  grad_checkpoint: false
+  grad_accum_steps: 1
+  grad_clip: 1.0
+  lr: 1.0e-4
+  train_tokens: 1e9
+  val_frac: 0.1
+  warmup_frac: 0.02
+  weight_decay: 0.0
