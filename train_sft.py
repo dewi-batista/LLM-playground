@@ -23,22 +23,13 @@ import yaml
 
 # CLI-related
 if len(sys.argv) < 4 or sys.argv[1] in {"-h", "--help"}:
-    print(f"usage: python {Path(__file__).name} <language> <vocab_timestamp> <base_model_number> [sft_run_number] [dataset]\n")
-    print("dataset: alpaca | oasst1 | linear_eqs | <path_to_jsonl>")
+    print(f"usage: python {Path(__file__).name} <language> <vocab_timestamp> <base_model_number> [sft_run_number]\n")
     raise SystemExit(1)
 args = sys.argv[1:]
 language = args[0]
 timestamp = args[1]
 base_model_number = int(args[2])
-dataset_name = "alpaca"
-model_number = None
-if len(args) > 3:
-    if args[3].isdigit():
-        model_number = int(args[3])
-        if len(args) > 4:
-            dataset_name = args[4]
-    else:
-        dataset_name = args[3]
+model_number = int(args[3]) if len(args) > 3 else None
 
 # device-related
 device = torch.device("cuda")
@@ -150,74 +141,12 @@ def encode_with_mask(prompt_text: str, full_text: str):
     keep = idx >= 0
     return idx[keep].astype(np.int32), mask[keep]
 
-tqdm.write(f"\nloading dataset: {dataset_name}")
-if dataset_name == "linear_eqs":
-    dataset_name = "data/linear_eqs.jsonl"
-
-if dataset_name in {"alpaca", "tatsu-lab/alpaca"}:
-    ds = load_dataset("tatsu-lab/alpaca", split="train")
-    ds = ds.filter(lambda x: bool(x["instruction"]) and bool(x["output"]))
-    ds = ds.train_test_split(test_size=val_frac, seed=0)
-    ds_train = ds["train"]
-    ds_val = ds["test"]
-elif dataset_name in {"oasst1", "OpenAssistant/oasst1"}:
-    raw = load_dataset("OpenAssistant/oasst1", split="train")
-    by_id = {ex["message_id"]: ex for ex in raw}
-    pairs = []
-    for ex in raw:
-        if ex["role"] != "assistant" or ex["lang"] != "en" or ex["parent_id"] is None:
-            continue
-        parent = by_id.get(ex["parent_id"])
-        if parent is None or parent["role"] != "prompter" or parent["lang"] != "en":
-            continue
-        instruction = parent["text"].strip()
-        output = ex["text"].strip()
-        if not instruction or not output:
-            continue
-        pairs.append({"instruction": instruction, "output": output})
-    random.Random(0).shuffle(pairs)
-    split = int(len(pairs) * (1 - val_frac))
-    ds_train = pairs[:split]
-    ds_val = pairs[split:]
-else:
-    dataset_path = Path(dataset_name)
-    if not dataset_path.is_absolute():
-        dataset_path = HERE / dataset_path
-    if not dataset_path.exists():
-        raise SystemExit(f"unknown dataset: {dataset_name}")
-
-    ds = load_dataset("json", data_files=str(dataset_path), split="train")
-    cols = set(ds.column_names)
-    if {"instruction", "output"} <= cols:
-        ds = ds.filter(lambda x: bool(x["instruction"]) and bool(x["output"]))
-        ds = ds.train_test_split(test_size=val_frac, seed=0)
-        ds_train = ds["train"]
-        ds_val = ds["test"]
-    elif "text" in cols:
-        pairs = []
-        for ex in ds:
-            text = (ex.get("text") or "").strip()
-            if not text:
-                continue
-            if "\nSolution:\n" in text:
-                before, after = text.split("\nSolution:\n", 1)
-            elif "Solution:\n" in text:
-                before, after = text.split("Solution:\n", 1)
-            else:
-                continue
-            instruction = before.strip()
-            if instruction.startswith("Problem:"):
-                instruction = instruction.removeprefix("Problem:").strip()
-            output = after.strip()
-            if not instruction or not output:
-                continue
-            pairs.append({"instruction": instruction, "output": output})
-        random.Random(0).shuffle(pairs)
-        split = int(len(pairs) * (1 - val_frac))
-        ds_train = pairs[:split]
-        ds_val = pairs[split:]
-    else:
-        raise SystemExit(f"json dataset must contain instruction/output or text: {dataset_path}")
+tqdm.write("\nloading dataset: tatsu-lab/alpaca")
+ds = load_dataset("tatsu-lab/alpaca", split="train")
+ds = ds.filter(lambda x: bool(x["instruction"]) and bool(x["output"]))
+ds = ds.train_test_split(test_size=val_frac, seed=0)
+ds_train = ds["train"]
+ds_val = ds["test"]
 
 tqdm.write(f"examples: train={len(ds_train):_}, val={len(ds_val):_}")
 
@@ -428,7 +357,7 @@ for step in pbar:
             best_val_ppl = val_ppl
             meta = {
                 "stage": "sft",
-                "dataset": dataset_name,
+                "dataset": "tatsu-lab/alpaca",
                 "language": language,
                 "timestamp": timestamp,
                 "base_model_number": base_model_number,
