@@ -78,6 +78,8 @@ cfg = config["sft"]
 batch_size       = int(cfg["batch_size"])
 seq_len          = int(cfg["seq_len"])
 dropout          = float(cfg["dropout"])
+early_stop_delta = float(cfg.get("early_stop_delta", 0.0))
+early_stop_pat   = int(cfg.get("early_stop_pat", 0))
 eval_batches     = int(cfg["eval_batches"])
 eval_every       = int(cfg["eval_every"])
 grad_accum_steps = int(cfg["grad_accum_steps"])
@@ -301,6 +303,7 @@ def run_model(X):
 pbar = tqdm(range(start_step, total_steps), desc="Train (SFT)", unit=" batch", total=total_steps, initial=start_step)
 train_nll = None
 val_nll = None
+early_stopped = False
 for step in pbar:
     # update lr of all parmams: warmup -> cosine decay
     if step < warmup_steps:
@@ -338,11 +341,8 @@ for step in pbar:
         dropout_embed.train()
 
         val_ppl = math.exp(val_nll)
-        is_best = (val_ppl < best_val_ppl)
-        if is_best:
-            patience_count = 0
-        else:
-            patience_count += 1
+        prev_best_val_ppl = best_val_ppl
+        is_best = (val_ppl < prev_best_val_ppl)
 
         if is_best:
             model_to_save = model._orig_mod if hasattr(model, "_orig_mod") else model
@@ -388,8 +388,7 @@ for step in pbar:
             best_val_ppl = val_ppl
             meta = {
                 "stage": "sft",
-                # "dataset": "tatsu-lab/alpaca",
-                "dataset": "OpenAssistant/oasst1",
+                "dataset": dataset_name,
                 "language": language,
                 "timestamp": timestamp,
                 "base_model_number": base_model_number,
@@ -409,6 +408,17 @@ for step in pbar:
                 json.dump(meta, f, indent=2)
                 f.write("\n")
 
+        improvement = prev_best_val_ppl - val_ppl
+        should_stop = False
+        if early_stop_pat > 0:
+            if improvement >= early_stop_delta:
+                patience_count = 0
+            else:
+                patience_count += 1
+            should_stop = (patience_count >= early_stop_pat)
+        elif 0 < improvement <= early_stop_delta:
+            should_stop = True
+
         append_metrics_row(
             metrics_path,
             {
@@ -424,4 +434,7 @@ for step in pbar:
         write_val_ppl_svg(metrics_path, val_ppl_plot_path)
 
         pbar.set_postfix(train_nll=f"{train_nll:.3f}", val_nll=f"{val_nll:.3f}")
-tqdm.write("Supervised fine-tuning complete!")
+        if should_stop:
+            early_stopped = True
+            break
+tqdm.write("Supervised fine-tuning complete! (stopped early)" if early_stopped else "Supervised fine-tuning complete!")

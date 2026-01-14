@@ -22,6 +22,8 @@ sft:
   batch_size: 375
   seq_len: 128
   dropout: 0.1
+  early_stop_delta: 0.1
+  early_stop_pat: 10
   eval_batches: 50
   eval_every: 50
   grad_checkpoint: false
