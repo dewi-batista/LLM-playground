@@ -142,7 +142,7 @@ def encode_with_mask(prompt_text: str, full_text: str):
 # tqdm.write("\nloading dataset: tatsu-lab/alpaca")
 # ds = load_dataset("tatsu-lab/alpaca")["train"]
 tqdm.write("\nloading dataset: OpenAssistant/oasst1")
-load_dataset("OpenAssistant/oasst1")
+ds = load_dataset("OpenAssistant/oasst1")
 ds = ds.filter(lambda x: bool(x["instruction"]) and bool(x["output"]))
 ds = ds.train_test_split(test_size=val_frac, seed=0)
 ds_train = ds["train"]
