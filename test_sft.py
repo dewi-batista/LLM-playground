@@ -20,16 +20,13 @@ HERE = Path(__file__).resolve().parent
 MODELS_DIR = HERE / "models"
 
 BATCH_INSTRUCTIONS = [
-    # "Explain what a transformer is in one sentence.",
-    "Write a short poem about Wales.",
-    # "Give me 3 bullet points about neural networks.",
-    # "What is gradient descent?",
-    # "Write a Python function that returns factorial(n).",
-    # "Write a story about Harry Potter fighting a man made of mushrooms",
+    "What's the capital of the Netherlands?",
+    "Write a Python function that returns factorial(n).",
+    "Write a story about Harry Potter fighting a man made of mushrooms",
     "Compute the sum of 2 and 3",
 ]
 
-MAX_NEW_TOKENS = 100
+MAX_NEW_TOKENS = 20
 NO_REPEAT_NGRAM = 3
 REPETITION_PENALTY = 1.1
 SAMPLE = True

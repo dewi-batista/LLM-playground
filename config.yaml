@@ -25,12 +25,12 @@ sft:
   early_stop_delta: 0.1
   early_stop_pat: 10
   eval_batches: 50
-  eval_every: 50
+  eval_every: 100
   grad_checkpoint: false
   grad_accum_steps: 1
   grad_clip: 1.0
   lr: 1.0e-4
-  train_tokens: 1e8
+  train_tokens: 1e9
   val_frac: 0.1
   warmup_frac: 0.02
   weight_decay: 0.0
