@@ -1,5 +1,12 @@
 ## Large language model playground
 
+My incredible model in action:
+<p align="center">
+  <span style="display: inline-block; text-align: center; margin: 0 0px;">
+    <img src="legacy/genius-model.jpeg"/>
+  </span>
+</p>
+
 ### TL;DR
 - GPT-style language model training setup
 - Personal project to develop experience with modern LLM training
