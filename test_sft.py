@@ -20,13 +20,15 @@ HERE = Path(__file__).resolve().parent
 MODELS_DIR = HERE / "models"
 
 BATCH_INSTRUCTIONS = [
-    "What's the capital of the Netherlands?",
-    "Write a Python function that returns factorial(n).",
-    "Write a story about Harry Potter fighting a man made of mushrooms",
-    "Compute the sum of 2 and 3",
+    # "What's the capital of the Netherlands?",
+    # "Write a Python function that returns factorial(n).",
+    # "Write a story about Harry Potter fighting a man made of mushrooms",
+    # "Compute the sum of 2 and 3",
+    "Problem: Solve 2x + -6 = 4",
+    "Problem: Solve 20x + 6 = 66",
 ]
 
-MAX_NEW_TOKENS = 20
+MAX_NEW_TOKENS = 10
 NO_REPEAT_NGRAM = 3
 REPETITION_PENALTY = 1.1
 SAMPLE = True
