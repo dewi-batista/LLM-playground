@@ -44,7 +44,7 @@ BENCH_SENTENCES = [
     "My favourite basketballer is Michael Jordan",
     "Michael Jordan plays the sport of basketball",
 ]
-NEXT_TOKENS = 100
+NEXT_TOKENS = 5
 
 # decoding knobs
 SAMPLE = True
