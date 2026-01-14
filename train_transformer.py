@@ -408,6 +408,17 @@ for step in pbar:
                 f.write("\n")
             tqdm.write(f"saved: {checkpoint_path} (step={step + 1}, val_ppl={val_ppl:.2f})")
 
+        improvement = prev_best_val_ppl - val_ppl
+        should_stop = False
+        if early_stop_pat > 0:
+            if improvement >= early_stop_delta:
+                no_improve_evals = 0
+            else:
+                no_improve_evals += 1
+            should_stop = (no_improve_evals >= early_stop_pat)
+        elif 0 < improvement <= early_stop_delta:
+            should_stop = True
+
         append_metrics_row(
             metrics_path,
             {
@@ -425,16 +436,8 @@ for step in pbar:
             train_nll=f"{train_nll:.3f}",
             val_nll=f"{val_nll:.3f}",
         )
-        improvement = prev_best_val_ppl - val_ppl
-        if early_stop_pat > 0:
-            if improvement >= early_stop_delta:
-                no_improve_evals = 0
-            else:
-                no_improve_evals += 1
-            if no_improve_evals >= early_stop_pat:
-                early_stopped = True
-                break
-        elif 0 < improvement <= early_stop_delta:
+
+        if should_stop:
             early_stopped = True
             break
 tqdm.write("Training complete! (stopped early)" if early_stopped else "Training complete!")
