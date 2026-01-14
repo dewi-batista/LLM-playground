@@ -1,10 +1,12 @@
 # NOTE: This is written assuming that a CUDA device is available.
+# NOTE: Most of this code is copy-pasted from train_transformer.py.
 
 from tfs_utils.core import TransformerBlock, build_token_id_to_index, iter_pre_tokens, make_bpe_encoder, positional_encoding
 from tfs_utils.metrics import append_metrics_row, write_val_ppl_svg
 
 from datasets import load_dataset
 from pathlib import Path
+from torch.utils.checkpoint import checkpoint
 from tqdm import tqdm
 
 import json
@@ -17,7 +19,6 @@ import sys
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-from torch.utils.checkpoint import checkpoint
 import yaml
 
 # CLI-related
@@ -65,19 +66,19 @@ with open(config_path, "r") as f:
     config = yaml.safe_load(f)
 
 cfg = config["sft"]
-batch_size        = int(cfg["batch_size"])
-seq_len           = int(cfg["seq_len"])
-dropout           = float(cfg["dropout"])
-eval_batches      = int(cfg["eval_batches"])
-eval_every        = int(cfg["eval_every"])
-grad_accum_steps  = int(cfg["grad_accum_steps"])
-grad_checkpoint   = bool(cfg["grad_checkpoint"])
-grad_clip         = float(cfg["grad_clip"])
-lr                = float(cfg["lr"])
-train_tokens      = float(cfg["train_tokens"])
-val_frac          = float(cfg["val_frac"])
-warmup_frac       = float(cfg["warmup_frac"])
-weight_decay      = float(cfg["weight_decay"])
+batch_size       = int(cfg["batch_size"])
+seq_len          = int(cfg["seq_len"])
+dropout          = float(cfg["dropout"])
+eval_batches     = int(cfg["eval_batches"])
+eval_every       = int(cfg["eval_every"])
+grad_accum_steps = int(cfg["grad_accum_steps"])
+grad_checkpoint  = bool(cfg["grad_checkpoint"])
+grad_clip        = float(cfg["grad_clip"])
+lr               = float(cfg["lr"])
+train_tokens     = float(cfg["train_tokens"])
+val_frac         = float(cfg["val_frac"])
+warmup_frac      = float(cfg["warmup_frac"])
+weight_decay     = float(cfg["weight_decay"])
 
 # NOTE on gradient accumulation: Forward and backprop for K micro-batches then
 # take the mean in performing the optimisation step.
@@ -138,8 +139,10 @@ def encode_with_mask(prompt_text: str, full_text: str):
     keep = idx >= 0
     return idx[keep].astype(np.int32), mask[keep]
 
-tqdm.write("\nloading dataset: tatsu-lab/alpaca")
-ds = load_dataset("tatsu-lab/alpaca")["train"]
+# tqdm.write("\nloading dataset: tatsu-lab/alpaca")
+# ds = load_dataset("tatsu-lab/alpaca")["train"]
+tqdm.write("\nloading dataset: OpenAssistant/oasst1")
+load_dataset("OpenAssistant/oasst1")
 ds = ds.filter(lambda x: bool(x["instruction"]) and bool(x["output"]))
 ds = ds.train_test_split(test_size=val_frac, seed=0)
 ds_train = ds["train"]
@@ -350,7 +353,8 @@ for step in pbar:
             best_val_ppl = val_ppl
             meta = {
                 "stage": "sft",
-                "dataset": "tatsu-lab/alpaca",
+                # "dataset": "tatsu-lab/alpaca",
+                "dataset": "OpenAssistant/oasst1",
                 "language": language,
                 "timestamp": timestamp,
                 "base_model_number": base_model_number,

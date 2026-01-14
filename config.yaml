@@ -22,13 +22,13 @@ sft:
   batch_size: 375
   seq_len: 128
   dropout: 0.1
-  eval_batches: 100
-  eval_every: 20
+  eval_batches: 50
+  eval_every: 50
   grad_checkpoint: false
   grad_accum_steps: 1
   grad_clip: 1.0
   lr: 1.0e-4
-  train_tokens: 3e7
+  train_tokens: 1e8
   val_frac: 0.1
   warmup_frac: 0.02
   weight_decay: 0.0

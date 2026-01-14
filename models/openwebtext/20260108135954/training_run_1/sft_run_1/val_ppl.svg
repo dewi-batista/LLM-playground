@@ -1,0 +1,52 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" width="960" height="480" viewBox="0 0 960 480">
+<style>
+  .mono { font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace; }
+  .small { font-size: 12px; fill: #444; }
+  .title { font-size: 16px; fill: #111; }
+</style>
+<rect x="0" y="0" width="100%" height="100%" fill="white"/>
+<text class="mono title" x="80" y="28">loss (nll): train=1.981  val=2.740  best_val=2.740   (ppl=15.48, step=625)</text>
+<line x1="80" y1="415.0" x2="880" y2="415.0" stroke="#eee" stroke-width="1"/>
+<text class="mono small" x="70" y="419.0" text-anchor="end">1.917</text>
+<text class="mono small" x="890" y="419.0" text-anchor="start">6.80</text>
+<line x1="80" y1="343.0" x2="880" y2="343.0" stroke="#eee" stroke-width="1"/>
+<text class="mono small" x="70" y="347.0" text-anchor="end">2.118</text>
+<text class="mono small" x="890" y="347.0" text-anchor="start">8.31</text>
+<line x1="80" y1="271.0" x2="880" y2="271.0" stroke="#eee" stroke-width="1"/>
+<text class="mono small" x="70" y="275.0" text-anchor="end">2.319</text>
+<text class="mono small" x="890" y="275.0" text-anchor="start">10.17</text>
+<line x1="80" y1="199.0" x2="880" y2="199.0" stroke="#eee" stroke-width="1"/>
+<text class="mono small" x="70" y="203.0" text-anchor="end">2.520</text>
+<text class="mono small" x="890" y="203.0" text-anchor="start">12.43</text>
+<line x1="80" y1="127.0" x2="880" y2="127.0" stroke="#eee" stroke-width="1"/>
+<text class="mono small" x="70" y="131.0" text-anchor="end">2.721</text>
+<text class="mono small" x="890" y="131.0" text-anchor="start">15.20</text>
+<line x1="80" y1="55.0" x2="880" y2="55.0" stroke="#eee" stroke-width="1"/>
+<text class="mono small" x="70" y="59.0" text-anchor="end">2.922</text>
+<text class="mono small" x="890" y="59.0" text-anchor="start">18.58</text>
+<line x1="80.0" y1="55" x2="80.0" y2="415" stroke="#f5f5f5" stroke-width="1"/>
+<text class="mono small" x="80.0" y="437" text-anchor="middle">50</text>
+<line x1="240.0" y1="55" x2="240.0" y2="415" stroke="#f5f5f5" stroke-width="1"/>
+<text class="mono small" x="240.0" y="437" text-anchor="middle">165</text>
+<line x1="400.0" y1="55" x2="400.0" y2="415" stroke="#f5f5f5" stroke-width="1"/>
+<text class="mono small" x="400.0" y="437" text-anchor="middle">280</text>
+<line x1="560.0" y1="55" x2="560.0" y2="415" stroke="#f5f5f5" stroke-width="1"/>
+<text class="mono small" x="560.0" y="437" text-anchor="middle">395</text>
+<line x1="720.0" y1="55" x2="720.0" y2="415" stroke="#f5f5f5" stroke-width="1"/>
+<text class="mono small" x="720.0" y="437" text-anchor="middle">510</text>
+<line x1="880.0" y1="55" x2="880.0" y2="415" stroke="#f5f5f5" stroke-width="1"/>
+<text class="mono small" x="880.0" y="437" text-anchor="middle">625</text>
+<rect x="80" y="55" width="800" height="360" fill="none" stroke="#333" stroke-width="1"/>
+<text class="mono small" x="80" y="45">nll (left) / ppl (right)</text>
+<polyline fill="none" stroke="#1f77b4" stroke-width="2" points="80.0,130.7 149.6,194.3 219.1,240.5 288.7,279.5 358.3,309.0 427.8,333.7 497.4,352.9 567.0,369.0 636.5,380.6 706.1,387.6 775.7,389.9 845.2,392.9 880.0,392.1"/>
+<polyline fill="none" stroke="#d62728" stroke-width="2" points="80.0,77.1 149.6,94.5 219.1,104.4 288.7,109.0 358.3,110.6 427.8,114.4 497.4,114.7 567.0,115.4 636.5,117.9 706.1,112.6 775.7,118.1 845.2,120.2 880.0,120.4"/>
+<polyline fill="none" stroke="#ff7f0e" stroke-width="2" stroke-dasharray="6,4" points="80.0,77.1 149.6,94.5 219.1,104.4 288.7,109.0 358.3,110.6 427.8,114.4 497.4,114.7 567.0,115.4 636.5,117.9 706.1,117.9 775.7,118.1 845.2,120.2 880.0,120.4"/>
+<line x1="660" y1="73" x2="686" y2="73" stroke="#1f77b4" stroke-width="2"/>
+<text class="mono small" x="694" y="77">train_nll</text>
+<line x1="660" y1="91" x2="686" y2="91" stroke="#d62728" stroke-width="2"/>
+<text class="mono small" x="694" y="95">val_nll</text>
+<line x1="660" y1="109" x2="686" y2="109" stroke="#ff7f0e" stroke-width="2" stroke-dasharray="6,4"/>
+<text class="mono small" x="694" y="113">best_val_nll</text>
+<text class="mono small" x="80" y="462">steps: 50 → 625</text>
+</svg>
