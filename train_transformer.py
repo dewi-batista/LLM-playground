@@ -1,6 +1,7 @@
 # NOTE: This is written assuming that a CUDA device is available.
 
 from cache_tokenisation import load_or_create_token_ids
+from torch.utils.checkpoint import checkpoint
 from tfs_utils.core import TransformerBlock, positional_encoding
 from tfs_utils.metrics import append_metrics_row, write_val_ppl_svg
 
@@ -17,7 +18,6 @@ import sys
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-from torch.utils.checkpoint import checkpoint
 import yaml
 
 # CLI-related
@@ -42,7 +42,7 @@ HERE = Path(__file__).resolve().parent
 run_dir = HERE / "models" / language / timestamp
 run_dir.mkdir(parents=True, exist_ok=True)
 
-config_path = HERE / "config.yaml"
+config_path = HERE / "config_medium.yaml"
 corpus_path = HERE / "data" / f"{language}.txt"
 vocab_path = run_dir / "vocabulary.json"
 encodings_path = run_dir / "merges.pkl"
