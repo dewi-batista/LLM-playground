@@ -237,6 +237,7 @@ optimizer = torch.optim.AdamW(
 
 start_step = 0
 best_val_ppl = float("inf")
+patience_count = 0
 if resume:
     ckpt = torch.load(checkpoint_path, map_location=device, weights_only=False)
     E.load_state_dict(ckpt["E_state_dict"])
@@ -338,6 +339,10 @@ for step in pbar:
 
         val_ppl = math.exp(val_nll)
         is_best = (val_ppl < best_val_ppl)
+        if is_best:
+            patience_count = 0
+        else:
+            patience_count += 1
 
         if is_best:
             model_to_save = model._orig_mod if hasattr(model, "_orig_mod") else model
@@ -413,7 +418,7 @@ for step in pbar:
                 "recent_loss": train_nll,
                 "val_ppl": val_ppl,
                 "best_val_ppl": best_val_ppl,
-                "patience_count": 0,
+                "patience_count": patience_count,
             },
         )
         write_val_ppl_svg(metrics_path, val_ppl_plot_path)
