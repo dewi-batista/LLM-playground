@@ -8,6 +8,7 @@ My incredible model in action:
 </p>
 
 ### TL;DR
+- Largest model trained ~355M parameters
 - GPT-style language model training setup
 - Personal project to develop experience with modern LLM training
 
