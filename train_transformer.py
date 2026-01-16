@@ -4,6 +4,7 @@ from cache_tokenisation import load_or_create_token_ids
 from torch.utils.checkpoint import checkpoint
 from tfs_utils.core import TransformerBlock, positional_encoding
 from tfs_utils.metrics import append_metrics_row, write_val_ppl_svg
+from tfs_utils.checkpointing import atomic_torch_save
 
 from pathlib import Path
 from tqdm import tqdm
@@ -369,7 +370,7 @@ for step in pbar:
                 "rng_state_torch": torch.get_rng_state(),
                 "rng_state_cuda": torch.cuda.get_rng_state_all() if torch.cuda.is_available() else None,
             }
-            torch.save(ckpt_obj, checkpoint_path)
+            atomic_torch_save(ckpt_obj, checkpoint_path)
             best_val_ppl = val_ppl
             meta = {
                 "language": language,

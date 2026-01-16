@@ -4,6 +4,7 @@
 from torch.utils.checkpoint import checkpoint
 from tfs_utils.core import TransformerBlock, build_token_id_to_index, iter_pre_tokens, make_bpe_encoder, positional_encoding
 from tfs_utils.metrics import append_metrics_row, write_val_ppl_svg
+from tfs_utils.checkpointing import atomic_torch_save
 
 from datasets import load_dataset
 from pathlib import Path
@@ -353,7 +354,7 @@ for step in pbar:
                 "rng_state_torch": torch.get_rng_state(),
                 "rng_state_cuda": torch.cuda.get_rng_state_all(),
             }
-            torch.save(ckpt_obj, checkpoint_path)
+            atomic_torch_save(ckpt_obj, checkpoint_path)
             best_val_ppl = val_ppl
             meta = {
                 "stage": "sft",
