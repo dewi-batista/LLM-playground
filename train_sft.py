@@ -3,7 +3,7 @@
 
 from torch.utils.checkpoint import checkpoint
 from tfs_utils.core import TransformerBlock, build_token_id_to_index, iter_pre_tokens, make_bpe_encoder, positional_encoding
-from tfs_utils.metrics import append_metrics_row, write_val_ppl_svg
+from tfs_utils.metrics import append_metrics_row, atomic_text_save, write_val_ppl_svg
 from tfs_utils.checkpointing import atomic_torch_save
 
 from datasets import load_dataset
@@ -354,29 +354,28 @@ for step in pbar:
                 "rng_state_torch": torch.get_rng_state(),
                 "rng_state_cuda": torch.cuda.get_rng_state_all(),
             }
-            atomic_torch_save(ckpt_obj, checkpoint_path)
-            best_val_ppl = val_ppl
-            meta = {
-                "stage": "sft",
-                "dataset": "tatsu-lab/alpaca",
-                "language": language,
-                "timestamp": timestamp,
-                "base_model_number": base_model_number,
-                "model_number": model_number,
-                "global_step": step + 1,
-                "train_nll": train_nll,
-                "val_nll": val_nll,
-                "val_ppl": val_ppl,
-                "best_val_ppl": val_ppl,
-                "seen_tokens": int((step + 1) * tokens_per_step),
-                "tokens_per_step": tokens_per_step,
-                "total_steps": total_steps,
-                "warmup_steps": warmup_steps,
-                "checkpoint_path": str(checkpoint_path.relative_to(HERE)),
-            }
-            with open(meta_path, "w") as f:
-                json.dump(meta, f, indent=2)
-                f.write("\n")
+            save_ok = atomic_torch_save(ckpt_obj, checkpoint_path)
+            if save_ok:
+                best_val_ppl = val_ppl
+                meta = {
+                    "stage": "sft",
+                    "dataset": "tatsu-lab/alpaca",
+                    "language": language,
+                    "timestamp": timestamp,
+                    "base_model_number": base_model_number,
+                    "model_number": model_number,
+                    "global_step": step + 1,
+                    "train_nll": train_nll,
+                    "val_nll": val_nll,
+                    "val_ppl": val_ppl,
+                    "best_val_ppl": val_ppl,
+                    "seen_tokens": int((step + 1) * tokens_per_step),
+                    "tokens_per_step": tokens_per_step,
+                    "total_steps": total_steps,
+                    "warmup_steps": warmup_steps,
+                    "checkpoint_path": str(checkpoint_path.relative_to(HERE)),
+                }
+                atomic_text_save(json.dumps(meta, indent=2) + "\n", meta_path)
 
         improvement = prev_best_val_ppl - val_ppl
         should_stop = False

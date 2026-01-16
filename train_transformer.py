@@ -3,7 +3,7 @@
 from cache_tokenisation import load_or_create_token_ids
 from torch.utils.checkpoint import checkpoint
 from tfs_utils.core import TransformerBlock, positional_encoding
-from tfs_utils.metrics import append_metrics_row, write_val_ppl_svg
+from tfs_utils.metrics import append_metrics_row, atomic_text_save, write_val_ppl_svg
 from tfs_utils.checkpointing import atomic_torch_save
 
 from pathlib import Path
@@ -370,44 +370,43 @@ for step in pbar:
                 "rng_state_torch": torch.get_rng_state(),
                 "rng_state_cuda": torch.cuda.get_rng_state_all() if torch.cuda.is_available() else None,
             }
-            atomic_torch_save(ckpt_obj, checkpoint_path)
-            best_val_ppl = val_ppl
-            meta = {
-                "language": language,
-                "timestamp": timestamp,
-                "model_number": model_number,
-                "global_step": step + 1,
-                "val_ppl": val_ppl,
-                "best_val_ppl": val_ppl,
-                "prev_best_val_ppl": prev_best_val_ppl,
-                "train_tokens": int(train_tokens),
-                "seen_tokens": int((step + 1) * tokens_per_step),
-                "tokens_per_step": tokens_per_step,
-                "total_steps": total_steps,
-                "warmup_steps": warmup_steps,
-                "d_model": d_model,
-                "num_heads": num_heads,
-                "num_blocks": num_blocks,
-                "d_ff": d_ff,
-                "seq_len": seq_len,
-                "batch_size": batch_size,
-                "dropout": dropout,
-                "lr": lr,
-                "weight_decay": weight_decay,
-                "grad_clip": grad_clip,
-                "grad_accum_steps": grad_accum_steps,
-                "val_frac": val_frac,
-                "eval_every": eval_every,
-                "eval_batches": eval_batches,
-                "vocabulary_path": str(vocab_path.relative_to(HERE)),
-                "merges_path": str(encodings_path.relative_to(HERE)),
-                "token_ids_path": str(token_ids_path.relative_to(HERE)),
-                "checkpoint_path": str(checkpoint_path.relative_to(HERE)),
-            }
-            with open(meta_path, "w") as f:
-                json.dump(meta, f, indent=2)
-                f.write("\n")
-            tqdm.write(f"saved: {checkpoint_path} (step={step + 1}, val_ppl={val_ppl:.2f})")
+            save_ok = atomic_torch_save(ckpt_obj, checkpoint_path)
+            if save_ok:
+                best_val_ppl = val_ppl
+                meta = {
+                    "language": language,
+                    "timestamp": timestamp,
+                    "model_number": model_number,
+                    "global_step": step + 1,
+                    "val_ppl": val_ppl,
+                    "best_val_ppl": val_ppl,
+                    "prev_best_val_ppl": prev_best_val_ppl,
+                    "train_tokens": int(train_tokens),
+                    "seen_tokens": int((step + 1) * tokens_per_step),
+                    "tokens_per_step": tokens_per_step,
+                    "total_steps": total_steps,
+                    "warmup_steps": warmup_steps,
+                    "d_model": d_model,
+                    "num_heads": num_heads,
+                    "num_blocks": num_blocks,
+                    "d_ff": d_ff,
+                    "seq_len": seq_len,
+                    "batch_size": batch_size,
+                    "dropout": dropout,
+                    "lr": lr,
+                    "weight_decay": weight_decay,
+                    "grad_clip": grad_clip,
+                    "grad_accum_steps": grad_accum_steps,
+                    "val_frac": val_frac,
+                    "eval_every": eval_every,
+                    "eval_batches": eval_batches,
+                    "vocabulary_path": str(vocab_path.relative_to(HERE)),
+                    "merges_path": str(encodings_path.relative_to(HERE)),
+                    "token_ids_path": str(token_ids_path.relative_to(HERE)),
+                    "checkpoint_path": str(checkpoint_path.relative_to(HERE)),
+                }
+                atomic_text_save(json.dumps(meta, indent=2) + "\n", meta_path)
+                tqdm.write(f"saved: {checkpoint_path} (step={step + 1}, val_ppl={val_ppl:.2f})")
 
         improvement = prev_best_val_ppl - val_ppl
         should_stop = False
