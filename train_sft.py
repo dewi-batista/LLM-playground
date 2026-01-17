@@ -280,6 +280,8 @@ pos_embedding = positional_encoding(seq_len, d_model, device=device)
 
 def run_model(X):
     if (not grad_checkpoint) or (not torch.is_grad_enabled()):
+        if device.type == "cuda" and hasattr(torch, "compiler") and hasattr(torch.compiler, "cudagraph_mark_step_begin"):
+            torch.compiler.cudagraph_mark_step_begin()
         return model(X)
     for block in model:
         X = checkpoint(block, X, use_reentrant=False)
