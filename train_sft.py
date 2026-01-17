@@ -1,10 +1,10 @@
 # NOTE: This is written assuming that a CUDA device is available.
 # NOTE: Most of this code is copy-pasted from train_transformer.py.
 
-from torch.utils.checkpoint import checkpoint
 from tfs_utils.core import TransformerBlock, build_token_id_to_index, iter_pre_tokens, make_bpe_encoder, positional_encoding
 from tfs_utils.metrics import append_metrics_row, atomic_text_save, write_val_ppl_svg
 from tfs_utils.checkpointing import atomic_torch_save
+from torch.utils.checkpoint import checkpoint
 
 from datasets import load_dataset
 from pathlib import Path
