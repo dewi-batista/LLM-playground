@@ -142,8 +142,13 @@ def encode_with_mask(prompt_text: str, full_text: str):
     keep = idx >= 0
     return idx[keep].astype(np.int32), mask[keep]
 
-tqdm.write("\nloading dataset: tatsu-lab/alpaca")
-ds = load_dataset("tatsu-lab/alpaca", split="train")
+tqdm.write("\nloading dataset: squad_v2")
+ds = load_dataset("squad_v2", split="train")
+ds = ds.filter(lambda x: (not x["is_impossible"]) and len(x["answers"]["text"]) > 0 and bool(x["question"]))
+ds = ds.map(
+    lambda x: {"instruction": x["question"].strip(), "output": x["answers"]["text"][0].strip()},
+    remove_columns=ds.column_names,
+)
 ds = ds.filter(lambda x: bool(x["instruction"]) and bool(x["output"]))
 ds = ds.train_test_split(test_size=val_frac, seed=0)
 ds_train = ds["train"]
@@ -359,7 +364,7 @@ for step in pbar:
                 best_val_ppl = val_ppl
                 meta = {
                     "stage": "sft",
-                    "dataset": "tatsu-lab/alpaca",
+                    "dataset": "squad_v2",
                     "language": language,
                     "timestamp": timestamp,
                     "base_model_number": base_model_number,
