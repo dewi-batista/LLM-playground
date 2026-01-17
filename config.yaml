@@ -1,4 +1,4 @@
-transformer-small:
+transformer-small: # ~120M
   batch_size: 375
   d_model: 768
   dropout: 0.1
@@ -35,7 +35,7 @@ sft-small:
   warmup_frac: 0.02
   weight_decay: 0.0
 
-transformer-medium:
+transformer-medium: # ~333M
   batch_size: 100
   d_model: 1024
   dropout: 0.1
@@ -72,7 +72,7 @@ sft-medium:
   warmup_frac: 0.02
   weight_decay: 0.0
 
-transformer-large:
+transformer-large: # ~775M
   batch_size: 32
   d_model: 1280
   dropout: 0.1
