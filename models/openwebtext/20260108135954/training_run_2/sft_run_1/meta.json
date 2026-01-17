@@ -1,0 +1,18 @@
+{
+  "stage": "sft",
+  "dataset": "squad_v2",
+  "language": "openwebtext",
+  "timestamp": "20260108135954",
+  "base_model_number": 2,
+  "model_number": 1,
+  "global_step": 200,
+  "train_nll": 3.457157163619995,
+  "val_nll": 4.212761716842651,
+  "val_ppl": 67.54281660405687,
+  "best_val_ppl": 67.54281660405687,
+  "seen_tokens": 5120000,
+  "tokens_per_step": 25600,
+  "total_steps": 3907,
+  "warmup_steps": 78,
+  "checkpoint_path": "models/openwebtext/20260108135954/training_run_2/sft_run_1/weights.ckpt"
+}
