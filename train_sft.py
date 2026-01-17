@@ -273,7 +273,7 @@ def eval_nll(token_ids, token_mask, desc):
         total_loss += float(batch_loss(token_ids, token_mask))
     return total_loss / eval_batches
 
-if not grad_checkpoint:
+if (not grad_checkpoint) and grad_accum_steps == 1:
     model = torch.compile(model, mode="reduce-overhead")
 offsets = np.arange(seq_len, dtype=np.int64)
 pos_embedding = positional_encoding(seq_len, d_model, device=device)
