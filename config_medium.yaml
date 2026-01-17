@@ -19,8 +19,8 @@ transformer:
   weight_decay: 0.01
 
 sft:
-  batch_size: 375
-  seq_len: 128
+  batch_size: 100
+  seq_len: 256
   dropout: 0.1
   early_stop_delta: 0.1
   early_stop_pat: 10
@@ -29,8 +29,8 @@ sft:
   grad_checkpoint: false
   grad_accum_steps: 1
   grad_clip: 1.0
-  lr: 1.0e-4
-  train_tokens: 1e9
+  lr: 5.0e-5
+  train_tokens: 1e8
   val_frac: 0.1
   warmup_frac: 0.02
   weight_decay: 0.0

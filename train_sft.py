@@ -62,7 +62,7 @@ metrics_path = sft_run_dir / "metrics.csv"
 val_ppl_plot_path = sft_run_dir / "val_ppl.svg"
 tqdm.write(f"\nsft_run_dir: {os.path.relpath(sft_run_dir, HERE)} (resume: {resume})")
 
-config_path = HERE / "config.yaml"
+config_path = HERE / "config_medium.yaml"
 with open(config_path, "r") as f:
     config = yaml.safe_load(f)
 
