@@ -22,13 +22,15 @@ import torch.nn.functional as F
 import yaml
 
 # CLI-related
-if len(sys.argv) < 3 or sys.argv[1] in {"-h", "--help"}:
-    print(f"usage: python {Path(__file__).name} <language> <vocab_timestamp> [model_number]\n")
+if len(sys.argv) < 4 or sys.argv[1] in {"-h", "--help"}:
+    print(f"usage: python {Path(__file__).name} <language> <vocab_timestamp> <size> [model_number]\n")
+    print("size: small | medium | large")
     raise SystemExit(1)
 args = sys.argv[1:]
 language = args[0]
 timestamp = args[1]
-model_number = int(args[2]) if len(args) > 2 else None
+size = args[2].lower()
+model_number = int(args[3]) if len(args) > 3 else None
 
 # device-related
 device = torch.device("cuda")
@@ -43,7 +45,7 @@ HERE = Path(__file__).resolve().parent
 run_dir = HERE / "models" / language / timestamp
 run_dir.mkdir(parents=True, exist_ok=True)
 
-config_path = HERE / "config_medium.yaml"
+config_path = HERE / "config.yaml"
 corpus_path = HERE / "data" / f"{language}.txt"
 vocab_path = run_dir / "vocabulary.json"
 encodings_path = run_dir / "merges.pkl"
@@ -92,7 +94,7 @@ tqdm.write(f"\nnum mergers (encodings): {len(encodings):_}")
 tqdm.write(f"num tokens in vocab: {vocab_size:_}")
 
 # hyperparams
-cfg = config["transformer"]
+cfg = config[f"transformer-{size}"]
 
 batch_size       = int(cfg["batch_size"])
 d_model          = int(cfg["d_model"])

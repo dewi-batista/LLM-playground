@@ -62,26 +62,9 @@ metrics_path = sft_run_dir / "metrics.csv"
 val_ppl_plot_path = sft_run_dir / "val_ppl.svg"
 tqdm.write(f"\nsft_run_dir: {os.path.relpath(sft_run_dir, HERE)} (resume: {resume})")
 
-config_path = HERE / "config_medium.yaml"
+config_path = HERE / "config.yaml"
 with open(config_path, "r") as f:
     config = yaml.safe_load(f)
-
-cfg = config["sft"]
-batch_size       = int(cfg["batch_size"])
-seq_len          = int(cfg["seq_len"])
-dropout          = float(cfg["dropout"])
-early_stop_delta = float(cfg.get("early_stop_delta", 0.0))
-early_stop_pat   = int(cfg.get("early_stop_pat", 0))
-eval_batches     = int(cfg["eval_batches"])
-eval_every       = int(cfg["eval_every"])
-grad_accum_steps = int(cfg["grad_accum_steps"])
-grad_checkpoint  = bool(cfg["grad_checkpoint"])
-grad_clip        = float(cfg["grad_clip"])
-lr               = float(cfg["lr"])
-train_tokens     = float(cfg["train_tokens"])
-val_frac         = float(cfg["val_frac"])
-warmup_frac      = float(cfg["warmup_frac"])
-weight_decay     = float(cfg["weight_decay"])
 
 # NOTE on gradient accumulation: Forward and backprop for K micro-batches then
 # take the mean in performing the optimisation step.
@@ -105,6 +88,34 @@ tqdm.write(f"base_ckpt: {os.path.relpath(base_ckpt_path, HERE)}")
 tqdm.write(f"sft_ckpt : {os.path.relpath(checkpoint_path, HERE)}")
 
 base_ckpt = torch.load(base_ckpt_path, map_location="cpu", weights_only=False)
+
+d_model = int(base_ckpt["d_model"])
+if d_model == 768:
+    size = "small"
+elif d_model == 1024:
+    size = "medium"
+elif d_model == 1280:
+    size = "large"
+else:
+    raise SystemExit(f"unknown model size for d_model={d_model}")
+
+cfg = config[f"sft-{size}"]
+batch_size       = int(cfg["batch_size"])
+seq_len          = int(cfg["seq_len"])
+dropout          = float(cfg["dropout"])
+early_stop_delta = float(cfg.get("early_stop_delta", 0.0))
+early_stop_pat   = int(cfg.get("early_stop_pat", 0))
+eval_batches     = int(cfg["eval_batches"])
+eval_every       = int(cfg["eval_every"])
+grad_accum_steps = int(cfg["grad_accum_steps"])
+grad_checkpoint  = bool(cfg["grad_checkpoint"])
+grad_clip        = float(cfg["grad_clip"])
+lr               = float(cfg["lr"])
+train_tokens     = float(cfg["train_tokens"])
+val_frac         = float(cfg["val_frac"])
+warmup_frac      = float(cfg["warmup_frac"])
+weight_decay     = float(cfg["weight_decay"])
+
 vocab_path = HERE / base_ckpt["bpe_vocab_path"]
 encodings_path = HERE / base_ckpt["bpe_encodings_path"]
 
@@ -119,7 +130,6 @@ token_id_to_index, _token_str_to_index = build_token_id_to_index(vocab, index_to
 token_id_to_index = token_id_to_index.numpy()
 
 V = len(index_to_token)
-d_model = int(base_ckpt["d_model"])
 num_heads = int(base_ckpt["num_heads"])
 num_blocks = int(base_ckpt["num_blocks"])
 d_ff = int(base_ckpt["d_ff"])
