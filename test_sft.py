@@ -20,16 +20,27 @@ HERE = Path(__file__).resolve().parent
 MODELS_DIR = HERE / "models"
 
 BATCH_INSTRUCTIONS = [
-    "What's the capital of the Netherlands?",
-    "Is chocolate a food?",
+    # "What's the capital of the Netherlands?",
+    # "Is chocolate full of sugar?",
     # "Write a story about Harry Potter fighting a man made of mushrooms",
+    # "Write a Python function for the factorial of n",
+    # "What's 2+3?",
+    # "Who's Beyonce?",
+    "At what time of the day do people most enjoy drinking coffee?",
+    "Which sport does Michael Jordan play?",
+    "What's the meaning of life?",
+    # "In a long blog-style explanation, the author clarifies a single factual detail early so readers can follow along. In the opening paragraph, it states plainly that the article was originally published in 2016. Later sections discuss trends before and after that year, comparing 2014, 2018, and even 2020 as reference points. Commenters speculate about updates, but the author never revises the original publication date. The closing sentence asks the reader to recall the year mentioned at the start. The article was published in 2016",
+    # "This forum post walks through a personal setup step by step, using a conversational tone common online. Early on, the poster explains that their operating system of choice is Linux, and that this preference motivates all later decisions. Other systems like Windows and macOS are mentioned only for comparison or criticism. Configuration details, package managers, and command examples all assume the same system throughout. In the final line, the post summarizes the choice made at the beginning. The operating system used is Linux",
+    # "A wiki-style paragraph introduces a concept and immediately names the key term to remember. It says that the protocol being discussed is called HTTPS, and explains why it matters for security. Later sentences contrast it with HTTP, clearly labeling HTTP as the older and less secure alternative. Examples, use cases, and historical notes consistently return to the same protocol name. The final sentence prompts recall of the main term introduced at the start. The protocol described is HTTPS",
+    # "In an online explainer about programming habits, the author states early that the language used in all examples is Python. Subsequent code snippets, syntax discussions, and library references all align with that choice. Other languages such as JavaScript and C++ are mentioned only as points of comparison, not as active examples. The post emphasizes consistency to avoid confusing beginners. At the end, the author reminds the reader which language was used throughout. The language used is Python",
+    # "A long comment thread summary describes a controversy involving a single platform. In the opening sentence, it notes that the discussion centers on Reddit and its moderation policies. Other platforms like Twitter and Facebook appear briefly as comparisons, but the focus never shifts away. Every quoted complaint, rule change, and reaction is tied back to the same site. The summary concludes by asking which platform the debate was about. The platform discussed is Reddit",
 ]
 
-MAX_NEW_TOKENS = 10
+MAX_NEW_TOKENS = 20
 NO_REPEAT_NGRAM = 3
 REPETITION_PENALTY = 1.1
 SAMPLE = True
-TEMPERATURE = 0.7
+TEMPERATURE = 0.1
 
 if len(sys.argv) < 5:
     print(f"usage: python {Path(__file__).name} <language> <vocab_timestamp> <base_model_number> <sft_run_number>")
