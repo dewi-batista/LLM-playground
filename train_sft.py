@@ -152,23 +152,36 @@ def encode_with_mask(prompt_text: str, full_text: str):
     keep = idx >= 0
     return idx[keep].astype(np.int32), mask[keep]
 
-tqdm.write("\nloading dataset: squad_v2")
-ds = load_dataset("squad_v2", split="train")
-ds = ds.filter(lambda x: len(x["answers"]["text"]) > 0 and bool(x["question"]))
-ds = ds.map(
-    lambda x: {"instruction": x["question"].strip(), "output": x["answers"]["text"][0].strip()},
-    remove_columns=ds.column_names,
-)
-ds = ds.filter(lambda x: bool(x["instruction"]) and bool(x["output"]))
-ds = ds.train_test_split(test_size=val_frac, seed=0)
-ds_train = ds["train"]
-ds_val = ds["test"]
+tqdm.write("\nloading dataset: web_questions")
+ds = load_dataset("web_questions")
+
+def webq_to_io(x):
+    q = (x["question"] or "").strip()
+    ans = x["answers"]
+    if isinstance(ans, dict):
+        texts = ans.get("text") or []
+        out = (texts[0] if texts else "").strip()
+    elif isinstance(ans, list):
+        a0 = ans[0] if ans else ""
+        if isinstance(a0, dict):
+            out = (a0.get("answer") or a0.get("text") or "").strip()
+        else:
+            out = str(a0).strip()
+    else:
+        out = str(ans).strip()
+    return {"instruction": q, "output": out}
+
+ds_train = ds["train"].map(webq_to_io, remove_columns=ds["train"].column_names)
+ds_train = ds_train.filter(lambda x: bool(x["instruction"]) and bool(x["output"]))
+ds_val = ds["test"].map(webq_to_io, remove_columns=ds["test"].column_names)
+ds_val = ds_val.filter(lambda x: bool(x["instruction"]) and bool(x["output"]))
 
 tqdm.write(f"examples: train={len(ds_train):_}, val={len(ds_val):_}")
 
-def build_stream(data):
+def build_stream(data, max_tokens: int | None = None):
     all_ids = []
     all_mask = []
+    total = 0
     for ex in tqdm(data, desc="tokenising", unit="ex"):
         instruction = ex["instruction"].strip()
         output = ex["output"].strip()
@@ -179,10 +192,18 @@ def build_stream(data):
             continue
         all_ids.append(ids)
         all_mask.append(mask)
-    return np.concatenate(all_ids), np.concatenate(all_mask)
+        total += len(ids)
+        if max_tokens is not None and total >= max_tokens:
+            break
+    ids = np.concatenate(all_ids)
+    mask = np.concatenate(all_mask)
+    if max_tokens is not None:
+        ids = ids[:max_tokens]
+        mask = mask[:max_tokens]
+    return ids, mask
 
-train_ids, train_mask = build_stream(ds_train)
-val_ids, val_mask = build_stream(ds_val)
+train_ids, train_mask = build_stream(ds_train, max_tokens=int(train_tokens))
+val_ids, val_mask = build_stream(ds_val, max_tokens=int(train_tokens * val_frac))
 tqdm.write(f"tokens: train={len(train_ids):_}, val={len(val_ids):_}")
 
 # step count computations
