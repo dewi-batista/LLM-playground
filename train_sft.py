@@ -152,29 +152,21 @@ def encode_with_mask(prompt_text: str, full_text: str):
     keep = idx >= 0
     return idx[keep].astype(np.int32), mask[keep]
 
-tqdm.write("\nloading dataset: web_questions")
-ds = load_dataset("web_questions")
+tqdm.write("\nloading dataset: tatsu-lab/alpaca")
+ds = load_dataset("tatsu-lab/alpaca", split="train")
+ds = ds.filter(lambda x: bool(x["instruction"]) and bool(x["output"]))
 
-def webq_to_io(x):
-    q = (x["question"] or "").strip()
-    ans = x["answers"]
-    if isinstance(ans, dict):
-        texts = ans.get("text") or []
-        out = (texts[0] if texts else "").strip()
-    elif isinstance(ans, list):
-        a0 = ans[0] if ans else ""
-        if isinstance(a0, dict):
-            out = (a0.get("answer") or a0.get("text") or "").strip()
-        else:
-            out = str(a0).strip()
-    else:
-        out = str(ans).strip()
-    return {"instruction": q, "output": out}
+def alpaca_to_io(x):
+    instruction = x["instruction"].strip()
+    user_input = (x.get("input") or "").strip()
+    if user_input:
+        instruction = f"{instruction}\n\nInput: {user_input}"
+    return {"instruction": instruction, "output": x["output"].strip()}
 
-ds_train = ds["train"].map(webq_to_io, remove_columns=ds["train"].column_names)
-ds_train = ds_train.filter(lambda x: bool(x["instruction"]) and bool(x["output"]))
-ds_val = ds["test"].map(webq_to_io, remove_columns=ds["test"].column_names)
-ds_val = ds_val.filter(lambda x: bool(x["instruction"]) and bool(x["output"]))
+ds = ds.map(alpaca_to_io, remove_columns=ds.column_names)
+ds = ds.train_test_split(test_size=val_frac, seed=0)
+ds_train = ds["train"]
+ds_val = ds["test"]
 
 tqdm.write(f"examples: train={len(ds_train):_}, val={len(ds_val):_}")
 
