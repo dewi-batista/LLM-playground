@@ -22,11 +22,7 @@ MODELS_DIR = HERE / "models"
 BATCH_INSTRUCTIONS = [
     "What's the capital of the Netherlands?",
     "Who is Beyonce? What does she do?",
-    "Write a Python function that returns factorial(n).",
     "Write a story about Harry Potter fighting a man made of mushrooms",
-    "Compute the sum of 2 and 3",
-    "Problem: Solve 2x + -6 = 4",
-    "Problem: Solve 20x + 6 = 66",
 ]
 
 MAX_NEW_TOKENS = 100
