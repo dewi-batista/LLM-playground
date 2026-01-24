@@ -1,0 +1,2 @@
+global_step,seen_tokens,lr,recent_loss,val_ppl,best_val_ppl,patience_count
+100,1.13M,2.825e-05,1.1462,24.18,24.18,0

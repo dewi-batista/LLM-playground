@@ -93,7 +93,7 @@ transformer-large: # ~775M
   weight_decay: 0.01
 
 sft-large:
-  batch_size: 32
+  batch_size: 44
   seq_len: 256
   dropout: 0.1
   early_stop_delta: 0.1

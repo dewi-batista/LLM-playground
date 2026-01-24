@@ -21,11 +21,11 @@ MODELS_DIR = HERE / "models"
 
 BATCH_INSTRUCTIONS = [
     "What's the capital of the Netherlands?",
-    "Who is Beyonce? What does she do?",
-    "Write a story about Harry Potter fighting a man made of mushrooms",
+    "Is chocolate a food?",
+    # "Write a story about Harry Potter fighting a man made of mushrooms",
 ]
 
-MAX_NEW_TOKENS = 100
+MAX_NEW_TOKENS = 10
 NO_REPEAT_NGRAM = 3
 REPETITION_PENALTY = 1.1
 SAMPLE = True
