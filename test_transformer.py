@@ -57,6 +57,8 @@ SAMPLE = True
 TEMPERATURE = 0.5
 REPETITION_PENALTY = 1.1
 NO_REPEAT_NGRAM = 3
+HIST_TOP_K = 8
+HIST_WIDTH = 40
 
 def parse_args():
     parser = argparse.ArgumentParser(
@@ -84,6 +86,36 @@ def parse_args():
     return parser.parse_args()
 
 
+def _format_hist_label(label, max_len=20):
+    clean = label.replace("\n", "\\n")
+    if len(clean) <= max_len:
+        return clean
+    return clean[: max_len - 3] + "..."
+
+
+def print_probability_histogram(probs, index_to_token, top_k=HIST_TOP_K, width=HIST_WIDTH):
+    k = min(int(top_k), int(probs.shape[-1]))
+    values, indices = torch.topk(probs, k=k)
+
+    rows = []
+    prob_sum = 0.0
+    for rank, (v, i) in enumerate(zip(values.tolist(), indices.tolist()), start=1):
+        p = float(v)
+        prob_sum += p
+        tok = token_to_cli(index_to_token[int(i)])
+        rows.append((f"{rank}. {_format_hist_label(tok)}", p))
+
+    remaining = max(0.0, 1.0 - prob_sum)
+    rows.append((f"{k + 1}. <remaining>", remaining))
+
+    for label, p in rows:
+        bar_len = int(round(p * width))
+        if p > 0 and bar_len == 0:
+            bar_len = 1
+        bar = "#" * bar_len
+        print(f"{label:<24} | {bar:<{width}} {p * 100:6.2f}%")
+
+
 def print_distribution_for_context(
     context_tokens,
     target_token,
@@ -97,6 +129,9 @@ def print_distribution_for_context(
     token_id_to_index,
     token_str_to_index,
     index_to_token,
+    histogram=False,
+    show_context_line=True,
+    show_generated=True,
 ):
     context_text = "".join(context_tokens)
 
@@ -129,28 +164,36 @@ def print_distribution_for_context(
     else:
         best_rank = None
 
-    indeces = list(context_indeces)
     generated = []
-    for _ in range(NEXT_TOKENS):
-        logits = next_token_logits(indeces[-seq_len:], E, model, final_lay_norm, U, pe)
-        next_idx = sample_next_token(
-            logits,
-            indeces[-seq_len:],
-            sample=SAMPLE,
-            temperature=TEMPERATURE,
-            repetition_penalty=REPETITION_PENALTY,
-            no_repeat_ngram=NO_REPEAT_NGRAM,
-        )
-        indeces.append(next_idx)
-        generated.append(token_to_cli(index_to_token[next_idx]))
+    if show_generated:
+        indeces = list(context_indeces)
+        for _ in range(NEXT_TOKENS):
+            logits = next_token_logits(indeces[-seq_len:], E, model, final_lay_norm, U, pe)
+            next_idx = sample_next_token(
+                logits,
+                indeces[-seq_len:],
+                sample=SAMPLE,
+                temperature=TEMPERATURE,
+                repetition_penalty=REPETITION_PENALTY,
+                no_repeat_ngram=NO_REPEAT_NGRAM,
+            )
+            indeces.append(next_idx)
+            generated.append(token_to_cli(index_to_token[next_idx]))
 
-    if target_token is not None:
-        rank_part = str(int(best_rank)) if best_rank is not None else "<not in vocab after pruning>"
-        print(f"\n{context_text} [{token_to_cli(target_token)}, {rank_part}] ({full_token_count} tokens)")
-    else:
-        print(f"\n{context_text} ({full_token_count} tokens)")
+    if show_context_line:
+        if target_token is not None:
+            rank_part = str(int(best_rank)) if best_rank is not None else "<not in vocab after pruning>"
+            print(f"\n{context_text} [{token_to_cli(target_token)}, {rank_part}] ({full_token_count} tokens)")
+        else:
+            print(f"\n{context_text} ({full_token_count} tokens)")
+
+    if histogram:
+        print_probability_histogram(probs0, index_to_token=index_to_token, top_k=HIST_TOP_K, width=HIST_WIDTH)
+        return
+
     print(top10)
-    print(generated)
+    if show_generated:
+        print(generated)
 
 
 def run_live_loop(
@@ -195,6 +238,9 @@ def run_live_loop(
             token_id_to_index=token_id_to_index,
             token_str_to_index=token_str_to_index,
             index_to_token=index_to_token,
+            histogram=True,
+            show_context_line=False,
+            show_generated=False,
         )
 
 
