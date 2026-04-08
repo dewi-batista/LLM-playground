@@ -1,8 +1,8 @@
 from pathlib import Path
 
+import argparse
 import json
 import pickle
-import sys
 
 import torch
 import torch.nn as nn
@@ -58,10 +58,151 @@ TEMPERATURE = 0.5
 REPETITION_PENALTY = 1.1
 NO_REPEAT_NGRAM = 3
 
+def parse_args():
+    parser = argparse.ArgumentParser(
+        description="Run inference with a trained transformer checkpoint.",
+        epilog=(
+            "Examples:\n"
+            "  python test_transformer.py en 20260408 3\n"
+            "  python test_transformer.py en 20260408 training_run_3 --live"
+        ),
+        formatter_class=argparse.RawTextHelpFormatter,
+    )
+    parser.add_argument(
+        "-help",
+        action="help",
+        help="show this help message and exit (same as -h/--help)",
+    )
+    parser.add_argument("language", help="Model language directory under models/")
+    parser.add_argument("timestamp", help="Timestamp directory under models/<language>/")
+    parser.add_argument("run", help="Training run id (e.g. 3) or explicit run directory name")
+    parser.add_argument(
+        "--live",
+        action="store_true",
+        help="Interactive terminal mode: read a prompt, print distribution, then wait for next input",
+    )
+    return parser.parse_args()
+
+
+def print_distribution_for_context(
+    context_tokens,
+    target_token,
+    E,
+    model,
+    final_lay_norm,
+    U,
+    pe,
+    seq_len,
+    bpe_encode,
+    token_id_to_index,
+    token_str_to_index,
+    index_to_token,
+):
+    context_text = "".join(context_tokens)
+
+    context_indeces = encode_pre_tokens_to_indices(context_tokens, bpe_encode, token_id_to_index)
+    full_token_count = len(context_indeces)
+    context_indeces = context_indeces[-seq_len:]
+
+    logits0 = next_token_logits(context_indeces, E, model, final_lay_norm, U, pe)
+    probs0 = torch.softmax(logits0, dim=-1)
+    values0, indices0 = torch.topk(probs0, k=10)
+    top10 = [(token_to_cli(index_to_token[int(i)]), round(float(v), 2)) for v, i in zip(values0, indices0)]
+
+    if target_token is not None:
+        candidates = []
+        for tok in target_variants(target_token):
+            idx = token_str_to_index.get(tok)
+            if idx is None:
+                pieces = encode_pre_tokens_to_indices([tok], bpe_encode, token_id_to_index)
+                if not pieces:
+                    continue
+                idx = int(pieces[0])
+            candidates.append(int(idx))
+
+        best_rank = None
+        for idx in candidates:
+            t_logit = logits0[idx]
+            r = int((logits0 > t_logit).sum().item()) + 1
+            if best_rank is None or r < best_rank:
+                best_rank = r
+    else:
+        best_rank = None
+
+    indeces = list(context_indeces)
+    generated = []
+    for _ in range(NEXT_TOKENS):
+        logits = next_token_logits(indeces[-seq_len:], E, model, final_lay_norm, U, pe)
+        next_idx = sample_next_token(
+            logits,
+            indeces[-seq_len:],
+            sample=SAMPLE,
+            temperature=TEMPERATURE,
+            repetition_penalty=REPETITION_PENALTY,
+            no_repeat_ngram=NO_REPEAT_NGRAM,
+        )
+        indeces.append(next_idx)
+        generated.append(token_to_cli(index_to_token[next_idx]))
+
+    if target_token is not None:
+        rank_part = str(int(best_rank)) if best_rank is not None else "<not in vocab after pruning>"
+        print(f"\n{context_text} [{token_to_cli(target_token)}, {rank_part}] ({full_token_count} tokens)")
+    else:
+        print(f"\n{context_text} ({full_token_count} tokens)")
+    print(top10)
+    print(generated)
+
+
+def run_live_loop(
+    E,
+    model,
+    final_lay_norm,
+    U,
+    pe,
+    seq_len,
+    bpe_encode,
+    token_id_to_index,
+    token_str_to_index,
+    index_to_token,
+):
+    print("Live mode enabled. Enter text and press Enter. Type /quit to exit.")
+    while True:
+        try:
+            sentence = input("> ")
+        except (EOFError, KeyboardInterrupt):
+            print()
+            break
+
+        if sentence.strip() in {"/quit", "/exit"}:
+            break
+        if not sentence.strip():
+            continue
+
+        context_tokens = list(iter_pre_tokens(sentence))
+        if not context_tokens:
+            continue
+
+        print_distribution_for_context(
+            context_tokens=context_tokens,
+            target_token=None,
+            E=E,
+            model=model,
+            final_lay_norm=final_lay_norm,
+            U=U,
+            pe=pe,
+            seq_len=seq_len,
+            bpe_encode=bpe_encode,
+            token_id_to_index=token_id_to_index,
+            token_str_to_index=token_str_to_index,
+            index_to_token=index_to_token,
+        )
+
+
 def main():
-    language = sys.argv[1]
-    timestamp = sys.argv[2]
-    run_arg = sys.argv[3]
+    args = parse_args()
+    language = args.language
+    timestamp = args.timestamp
+    run_arg = args.run
 
     device = torch.device("cuda") if torch.cuda.is_available() else torch.device("cpu")
 
@@ -113,59 +254,39 @@ def main():
 
     pe = positional_encoding(seq_len, d_model, device=device)
 
+    if args.live:
+        run_live_loop(
+            E=E,
+            model=model,
+            final_lay_norm=final_lay_norm,
+            U=U,
+            pe=pe,
+            seq_len=seq_len,
+            bpe_encode=bpe_encode,
+            token_id_to_index=token_id_to_index,
+            token_str_to_index=token_str_to_index,
+            index_to_token=index_to_token,
+        )
+        return
+
     for sentence in BENCH_SENTENCES:
         pre_tokens = list(iter_pre_tokens(sentence))
         context_tokens = pre_tokens[:-1]
         target_token = pre_tokens[-1]
-        context_text = "".join(context_tokens)
-
-        full_indeces = encode_pre_tokens_to_indices(pre_tokens, bpe_encode, token_id_to_index)
-        full_token_count = len(full_indeces)
-
-        context_indeces = encode_pre_tokens_to_indices(context_tokens, bpe_encode, token_id_to_index)
-        context_indeces = context_indeces[-seq_len:]
-
-        logits0 = next_token_logits(context_indeces, E, model, final_lay_norm, U, pe)
-        probs0 = torch.softmax(logits0, dim=-1)
-        values0, indices0 = torch.topk(probs0, k=10)
-        top10 = [(token_to_cli(index_to_token[int(i)]), round(float(v), 2)) for v, i in zip(values0, indices0)]
-
-        candidates = []
-        for tok in target_variants(target_token):
-            idx = token_str_to_index.get(tok)
-            if idx is None:
-                pieces = encode_pre_tokens_to_indices([tok], bpe_encode, token_id_to_index)
-                if not pieces:
-                    continue
-                idx = int(pieces[0])
-            candidates.append(int(idx))
-
-        best_rank = None
-        for idx in candidates:
-            t_logit = logits0[idx]
-            r = int((logits0 > t_logit).sum().item()) + 1
-            if best_rank is None or r < best_rank:
-                best_rank = r
-
-        indeces = list(context_indeces)
-        generated = []
-        for _ in range(NEXT_TOKENS):
-            logits = next_token_logits(indeces[-seq_len:], E, model, final_lay_norm, U, pe)
-            next_idx = sample_next_token(
-                logits,
-                indeces[-seq_len:],
-                sample=SAMPLE,
-                temperature=TEMPERATURE,
-                repetition_penalty=REPETITION_PENALTY,
-                no_repeat_ngram=NO_REPEAT_NGRAM,
-            )
-            indeces.append(next_idx)
-            generated.append(token_to_cli(index_to_token[next_idx]))
-
-        rank_part = str(int(best_rank)) if best_rank is not None else "<not in vocab after pruning>"
-        print(f"\n{context_text} [{token_to_cli(target_token)}, {rank_part}] ({full_token_count} tokens)")
-        print(top10)
-        print(generated)
+        print_distribution_for_context(
+            context_tokens=context_tokens,
+            target_token=target_token,
+            E=E,
+            model=model,
+            final_lay_norm=final_lay_norm,
+            U=U,
+            pe=pe,
+            seq_len=seq_len,
+            bpe_encode=bpe_encode,
+            token_id_to_index=token_id_to_index,
+            token_str_to_index=token_str_to_index,
+            index_to_token=index_to_token,
+        )
 
 if __name__ == "__main__":
     main()
