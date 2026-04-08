@@ -60,7 +60,7 @@ NO_REPEAT_NGRAM = 3
 HIST_TOP_K = 7
 HIST_WIDTH = 40
 HIST_BAR_CHAR = "■"
-HIST_RIGHT_EDGE_CHAR = "┆"
+HIST_RIGHT_EDGE_CHAR = "|"
 
 def parse_args():
     parser = argparse.ArgumentParser(
@@ -89,7 +89,9 @@ def parse_args():
 
 
 def _format_hist_label(label, max_len=20):
-    clean = label.replace("\n", "\\n")
+    clean = label.lstrip("_").replace("\n", "\\n")
+    if not clean:
+        clean = "<blank>"
     if len(clean) <= max_len:
         return clean
     return clean[: max_len - 3] + "..."
@@ -105,10 +107,10 @@ def print_probability_histogram(probs, index_to_token, top_k=HIST_TOP_K, width=H
         p = float(v)
         prob_sum += p
         tok = token_to_cli(index_to_token[int(i)])
-        rows.append((f"{rank}. {_format_hist_label(tok)}", p))
+        rows.append((_format_hist_label(tok), p))
 
     remaining = max(0.0, 1.0 - prob_sum)
-    rows.append((f"{k + 1}. <remaining>", remaining))
+    rows.append(("<remaining>", remaining))
 
     for label, p in rows:
         bar_len = int(round(p * width))
