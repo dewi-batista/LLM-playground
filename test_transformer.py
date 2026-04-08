@@ -112,7 +112,7 @@ def print_probability_histogram(probs, index_to_token, top_k=HIST_TOP_K, width=H
         bar_len = int(round(p * width))
         if p > 0 and bar_len == 0:
             bar_len = 1
-        bar = "=" * bar_len
+        bar = "█" * bar_len
         print(f"{label:<24} | {bar:<{width}} {p * 100:5.1f}%")
 
 
