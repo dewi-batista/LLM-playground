@@ -209,6 +209,7 @@ def run_live_loop(
     index_to_token,
 ):
     while True:
+        print()
         try:
             sentence = input("> ")
         except (EOFError, KeyboardInterrupt):
