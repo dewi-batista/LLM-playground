@@ -57,7 +57,7 @@ SAMPLE = True
 TEMPERATURE = 0.5
 REPETITION_PENALTY = 1.1
 NO_REPEAT_NGRAM = 3
-HIST_TOP_K = 8
+HIST_TOP_K = 7
 HIST_WIDTH = 40
 
 def parse_args():
@@ -112,8 +112,8 @@ def print_probability_histogram(probs, index_to_token, top_k=HIST_TOP_K, width=H
         bar_len = int(round(p * width))
         if p > 0 and bar_len == 0:
             bar_len = 1
-        bar = "#" * bar_len
-        print(f"{label:<24} | {bar:<{width}} {p * 100:6.2f}%")
+        bar = "=" * bar_len
+        print(f"{label:<24} | {bar:<{width}} {p * 100:5.1f}%")
 
 
 def print_distribution_for_context(
@@ -208,7 +208,6 @@ def run_live_loop(
     token_str_to_index,
     index_to_token,
 ):
-    print("Live mode enabled. Enter text and press Enter. Type /quit to exit.")
     while True:
         try:
             sentence = input("> ")
