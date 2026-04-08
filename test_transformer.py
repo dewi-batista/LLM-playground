@@ -117,7 +117,7 @@ def print_probability_histogram(probs, index_to_token, top_k=HIST_TOP_K, width=H
         rows.append((_format_hist_label(tok), p))
 
     remaining = max(0.0, 1.0 - prob_sum)
-    rows.append(("<remaining>", remaining))
+    rows.append(("<rest>", remaining))
 
     for label, p in rows:
         bar_len = int(round(p * width))
