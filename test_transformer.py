@@ -61,6 +61,7 @@ HIST_TOP_K = 7
 HIST_WIDTH = 40
 HIST_BAR_CHAR = "■"
 HIST_RIGHT_EDGE_CHAR = "|"
+LIVE_GENERATE_MAX_TOKENS = 200
 
 def parse_args():
     parser = argparse.ArgumentParser(
@@ -89,7 +90,7 @@ def parse_args():
     parser.add_argument(
         "--live-generate",
         action="store_true",
-        help="Interactive autoregressive mode: input '<num_tokens> <prompt>' to sample continuations",
+        help="Interactive autoregressive mode: input a prompt and sample until a token ending with '.'",
     )
     return parser.parse_args()
 
@@ -256,7 +257,7 @@ def run_live_loop(
 
 def sample_continuation_tokens(
     context_tokens,
-    num_tokens,
+    max_tokens,
     E,
     model,
     final_lay_norm,
@@ -273,7 +274,7 @@ def sample_continuation_tokens(
         return []
 
     generated = []
-    for _ in range(num_tokens):
+    for _ in range(max_tokens):
         logits = next_token_logits(indeces[-seq_len:], E, model, final_lay_norm, U, pe)
         next_idx = sample_next_token(
             logits,
@@ -284,8 +285,19 @@ def sample_continuation_tokens(
             no_repeat_ngram=NO_REPEAT_NGRAM,
         )
         indeces.append(next_idx)
-        generated.append(token_to_cli(index_to_token[next_idx]))
+        next_tok = token_to_cli(index_to_token[next_idx])
+        generated.append(next_tok)
+        if next_tok.lstrip("_").rstrip().endswith("."):
+            break
     return generated
+
+
+def render_generated_text(generated_tokens):
+    out = []
+    for tok in generated_tokens:
+        lead_us = len(tok) - len(tok.lstrip("_"))
+        out.append((" " * lead_us) + tok[lead_us:])
+    return "".join(out).lstrip()
 
 
 def run_live_generate_loop(
@@ -313,24 +325,7 @@ def run_live_generate_loop(
         if not stripped:
             continue
 
-        parts = stripped.split(maxsplit=1)
-        if len(parts) < 2:
-            print("Format: <num_tokens> <prompt>")
-            continue
-
-        num_tokens_str, prompt = parts
-        try:
-            num_tokens = int(num_tokens_str)
-        except ValueError:
-            print("First value must be an integer.")
-            continue
-
-        if num_tokens < 0:
-            print("num_tokens must be >= 0.")
-            continue
-        if not prompt.strip():
-            print("Prompt must not be empty.")
-            continue
+        prompt = stripped
 
         context_tokens = list(iter_pre_tokens(prompt))
         if not context_tokens:
@@ -339,7 +334,7 @@ def run_live_generate_loop(
 
         generated = sample_continuation_tokens(
             context_tokens=context_tokens,
-            num_tokens=num_tokens,
+            max_tokens=LIVE_GENERATE_MAX_TOKENS,
             E=E,
             model=model,
             final_lay_norm=final_lay_norm,
@@ -350,7 +345,7 @@ def run_live_generate_loop(
             token_id_to_index=token_id_to_index,
             index_to_token=index_to_token,
         )
-        print("".join(generated))
+        print(render_generated_text(generated))
 
 
 def main():
