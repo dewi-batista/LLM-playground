@@ -68,7 +68,8 @@ def parse_args():
         epilog=(
             "Examples:\n"
             "  python test_transformer.py en 20260408 3\n"
-            "  python test_transformer.py en 20260408 training_run_3 --live"
+            "  python test_transformer.py en 20260408 training_run_3 --live\n"
+            "  python test_transformer.py en 20260408 training_run_3 --live-generate"
         ),
         formatter_class=argparse.RawTextHelpFormatter,
     )
@@ -84,6 +85,11 @@ def parse_args():
         "--live",
         action="store_true",
         help="Interactive terminal mode: read a prompt, print distribution, then wait for next input",
+    )
+    parser.add_argument(
+        "--live-generate",
+        action="store_true",
+        help="Interactive autoregressive mode: input '<num_tokens> <prompt>' to sample continuations",
     )
     return parser.parse_args()
 
@@ -248,11 +254,113 @@ def run_live_loop(
         )
 
 
+def sample_continuation_tokens(
+    context_tokens,
+    num_tokens,
+    E,
+    model,
+    final_lay_norm,
+    U,
+    pe,
+    seq_len,
+    bpe_encode,
+    token_id_to_index,
+    index_to_token,
+):
+    indeces = encode_pre_tokens_to_indices(context_tokens, bpe_encode, token_id_to_index)
+    indeces = indeces[-seq_len:]
+    if not indeces:
+        return []
+
+    generated = []
+    for _ in range(num_tokens):
+        logits = next_token_logits(indeces[-seq_len:], E, model, final_lay_norm, U, pe)
+        next_idx = sample_next_token(
+            logits,
+            indeces[-seq_len:],
+            sample=SAMPLE,
+            temperature=TEMPERATURE,
+            repetition_penalty=REPETITION_PENALTY,
+            no_repeat_ngram=NO_REPEAT_NGRAM,
+        )
+        indeces.append(next_idx)
+        generated.append(token_to_cli(index_to_token[next_idx]))
+    return generated
+
+
+def run_live_generate_loop(
+    E,
+    model,
+    final_lay_norm,
+    U,
+    pe,
+    seq_len,
+    bpe_encode,
+    token_id_to_index,
+    index_to_token,
+):
+    while True:
+        print()
+        try:
+            line = input("> ")
+        except (EOFError, KeyboardInterrupt):
+            print()
+            break
+
+        stripped = line.strip()
+        if stripped in {"/quit", "/exit"}:
+            break
+        if not stripped:
+            continue
+
+        parts = stripped.split(maxsplit=1)
+        if len(parts) < 2:
+            print("Format: <num_tokens> <prompt>")
+            continue
+
+        num_tokens_str, prompt = parts
+        try:
+            num_tokens = int(num_tokens_str)
+        except ValueError:
+            print("First value must be an integer.")
+            continue
+
+        if num_tokens < 0:
+            print("num_tokens must be >= 0.")
+            continue
+        if not prompt.strip():
+            print("Prompt must not be empty.")
+            continue
+
+        context_tokens = list(iter_pre_tokens(prompt))
+        if not context_tokens:
+            print("Prompt produced no tokens.")
+            continue
+
+        generated = sample_continuation_tokens(
+            context_tokens=context_tokens,
+            num_tokens=num_tokens,
+            E=E,
+            model=model,
+            final_lay_norm=final_lay_norm,
+            U=U,
+            pe=pe,
+            seq_len=seq_len,
+            bpe_encode=bpe_encode,
+            token_id_to_index=token_id_to_index,
+            index_to_token=index_to_token,
+        )
+        print("".join(generated))
+
+
 def main():
     args = parse_args()
     language = args.language
     timestamp = args.timestamp
     run_arg = args.run
+
+    if args.live and args.live_generate:
+        raise SystemExit("Use only one mode: --live or --live-generate")
 
     device = torch.device("cuda") if torch.cuda.is_available() else torch.device("cpu")
 
@@ -315,6 +423,20 @@ def main():
             bpe_encode=bpe_encode,
             token_id_to_index=token_id_to_index,
             token_str_to_index=token_str_to_index,
+            index_to_token=index_to_token,
+        )
+        return
+
+    if args.live_generate:
+        run_live_generate_loop(
+            E=E,
+            model=model,
+            final_lay_norm=final_lay_norm,
+            U=U,
+            pe=pe,
+            seq_len=seq_len,
+            bpe_encode=bpe_encode,
+            token_id_to_index=token_id_to_index,
             index_to_token=index_to_token,
         )
         return
