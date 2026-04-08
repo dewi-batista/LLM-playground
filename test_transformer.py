@@ -59,6 +59,7 @@ REPETITION_PENALTY = 1.1
 NO_REPEAT_NGRAM = 3
 HIST_TOP_K = 7
 HIST_WIDTH = 40
+HIST_BAR_CHAR = "■"
 
 def parse_args():
     parser = argparse.ArgumentParser(
@@ -112,7 +113,7 @@ def print_probability_histogram(probs, index_to_token, top_k=HIST_TOP_K, width=H
         bar_len = int(round(p * width))
         if p > 0 and bar_len == 0:
             bar_len = 1
-        bar = "█" * bar_len
+        bar = HIST_BAR_CHAR * bar_len
         print(f"{label:<24} | {bar:<{width}} {p * 100:5.1f}%")
 
 
