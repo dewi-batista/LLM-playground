@@ -1,4 +1,4 @@
-# NOTE: This is written assuming that a CUDA device is available.
+# NOTE: This is written assuming that a CUDA device is available.
 
 from cache_tokenisation import load_or_create_token_ids
 from torch.utils.checkpoint import checkpoint
