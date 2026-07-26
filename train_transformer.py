@@ -2,7 +2,7 @@
 
 from cache_tokenisation import load_or_create_token_ids
 from torch.utils.checkpoint import checkpoint
-from tfs_utils.core import TransformerBlock, positional_encoding
+from tfs_utils.model_factory import arch_to_ckpt_fields, build_model, collect_aux_loss, init_weights, resolve_arch_config
 from tfs_utils.metrics import append_metrics_row, atomic_text_save, write_val_ppl_svg
 from tfs_utils.checkpointing import atomic_torch_save
 
@@ -115,10 +115,6 @@ val_frac         = float(cfg["val_frac"])
 warmup_frac      = float(cfg["warmup_frac"])
 weight_decay     = float(cfg["weight_decay"])
 
-# dependent hyperparams
-d_ff = 4 * d_model
-num_heads = d_model // 64
-
 # NOTE on gradient accumulation: Forward and backprop for K micro-batches then
 # take the mean in performing the optimisation step.
 
@@ -170,37 +166,13 @@ tqdm.write(f"\ntrain_len: {len(train_token_ids):_}, val_len: {len(val_token_ids)
 
 # the model begins...
 dropout_embed = nn.Dropout(dropout).to(device)
-E = nn.Embedding(V, d_model).to(device)
-final_lay_norm = nn.LayerNorm(d_model).to(device)
-model = nn.Sequential(*[TransformerBlock(d_model, d_ff, num_heads, dropout) for _ in range(num_blocks)]).to(device)
-U = nn.Linear(d_model, V, bias=False).to(device)
-
-# GPT-2-style weight-init (suggested to me) for stability
-# W elements ~ N(0, 0.02), biases = 0, layer norm scale = 1, shift = 0
-# Why 0.02? In the words of Neel Nanda: who knows, it works.
-def init_gpt2(m):
-    if isinstance(m, nn.Linear):
-        nn.init.normal_(m.weight, mean=0.0, std=0.02)
-        if m.bias is not None:
-            nn.init.zeros_(m.bias)
-    elif isinstance(m, nn.Embedding):
-        nn.init.normal_(m.weight, mean=0.0, std=0.02)
-    elif isinstance(m, nn.LayerNorm):
-        nn.init.ones_(m.weight)
-        nn.init.zeros_(m.bias)
+arch = resolve_arch_config(cfg)
+bundle = build_model(arch, V, device)
+E, model, final_lay_norm, U = bundle.E, bundle.model, bundle.final_lay_norm, bundle.U
+num_heads, d_ff = arch.num_heads, arch.d_ff
 
 if not resume:
-    E.apply(init_gpt2)
-    model.apply(init_gpt2)
-    final_lay_norm.apply(init_gpt2)
-
-    resid_scale = math.sqrt(2 * num_blocks)
-    for block in model:
-        block.W_O.weight.data /= resid_scale
-        block.W_2.weight.data /= resid_scale
-
-# weight tying
-U.weight = E.weight
+    init_weights(bundle)
 
 # NOTE: Does not include U.parameters() due to weight tying.
 params = list(E.parameters()) + list(model.parameters()) + list(final_lay_norm.parameters())
@@ -263,7 +235,7 @@ def eval_nll(token_ids, desc): # eval NLL on random batches (dropout off)
 if (not grad_checkpoint) and grad_accum_steps == 1:
     model = torch.compile(model, mode="reduce-overhead")
 offsets = np.arange(seq_len, dtype=np.int64)
-pos_embedding = positional_encoding(seq_len, d_model, device=device)
+pos_embedding = bundle.pe
 
 def run_model(X):
     if (not grad_checkpoint) or (not torch.is_grad_enabled()):
@@ -306,7 +278,13 @@ for step in pbar:
         with torch.autocast(device_type=device.type, dtype=amp_dtype, enabled=amp_enabled):
             X = dropout_embed(E(context_window) + pos_embedding)
             logits = U(final_lay_norm(run_model(X)))
-            loss = F.cross_entropy(logits.reshape(-1, V), targets.reshape(-1))
+            ce_loss = F.cross_entropy(logits.reshape(-1, V), targets.reshape(-1))
+            # aux_loss is 0.0 for non-MoE configs (collect_aux_loss finds no
+            # blocks with _last_aux_loss set); the reported/logged loss below
+            # stays pure cross-entropy either way -- aux_loss is a training-time
+            # regularizer, not part of the reported perplexity.
+            aux_loss = collect_aux_loss(bundle.model)
+            loss = ce_loss + arch.aux_loss_weight * aux_loss
         (loss / grad_accum_steps).backward()
     torch.nn.utils.clip_grad_norm_(params, grad_clip)
     optimizer.step()
@@ -344,10 +322,7 @@ for step in pbar:
                 "vocab_size": V,
                 "min_count": min_count,
                 "index_to_token": index_to_token,
-                "d_model": d_model,
-                "num_heads": num_heads,
-                "num_blocks": num_blocks,
-                "d_ff": d_ff,
+                **arch_to_ckpt_fields(arch),
                 "seq_len": seq_len,
                 "batch_size": batch_size,
                 "dropout": dropout,
@@ -390,10 +365,7 @@ for step in pbar:
                     "tokens_per_step": tokens_per_step,
                     "total_steps": total_steps,
                     "warmup_steps": warmup_steps,
-                    "d_model": d_model,
-                    "num_heads": num_heads,
-                    "num_blocks": num_blocks,
-                    "d_ff": d_ff,
+                    **arch_to_ckpt_fields(arch),
                     "seq_len": seq_len,
                     "batch_size": batch_size,
                     "dropout": dropout,

@@ -1,20 +1,18 @@
 from pathlib import Path
 from tfs_utils.core import (
-    TransformerBlock,
     build_token_id_to_index,
     encode_pre_tokens_to_indices,
     iter_pre_tokens,
     make_bpe_encoder,
     next_token_logits,
-    positional_encoding,
     sample_next_token,
 )
+from tfs_utils.model_factory import build_model, resolve_arch_config
 
 import json
 import pickle
 import sys
 import torch
-import torch.nn as nn
 
 HERE = Path(__file__).resolve().parent
 MODELS_DIR = HERE / "models"
@@ -69,20 +67,15 @@ bpe_encode = make_bpe_encoder(encodings)
 index_to_token = ckpt["index_to_token"]
 token_id_to_index, _token_str_to_index = build_token_id_to_index(vocab, index_to_token)
 
-d_ff = int(ckpt["d_ff"])
-d_model = int(ckpt["d_model"])
-dropout = float(ckpt["dropout"])
-num_heads = int(ckpt["num_heads"])
-num_blocks = int(ckpt["num_blocks"])
-seq_len = int(ckpt["seq_len"])
 V = len(index_to_token)
+arch = resolve_arch_config(ckpt)
+d_model, num_heads, num_blocks, d_ff = arch.d_model, arch.num_heads, arch.num_blocks, arch.d_ff
+dropout = arch.dropout
+seq_len = arch.seq_len
 
 # architecture
-E = nn.Embedding(V, d_model).to(device)
-final_lay_norm = nn.LayerNorm(d_model).to(device)
-model = nn.Sequential(*[TransformerBlock(d_model, d_ff, num_heads, dropout) for _ in range(num_blocks)]).to(device)
-U = nn.Linear(d_model, V, bias=False).to(device)
-U.weight = E.weight
+bundle = build_model(arch, V, device)
+E, model, final_lay_norm, U = bundle.E, bundle.model, bundle.final_lay_norm, bundle.U
 
 # load ckpt weights
 E.load_state_dict(ckpt["E_state_dict"])
@@ -95,7 +88,7 @@ model.eval()
 final_lay_norm.eval()
 U.eval()
 
-pe = positional_encoding(seq_len, d_model, device=device)
+pe = bundle.pe
 for instruction in BATCH_INSTRUCTIONS:
     prompt = f"Instruction: {instruction.strip()} Response:"
     pre_tokens = list(iter_pre_tokens(prompt))

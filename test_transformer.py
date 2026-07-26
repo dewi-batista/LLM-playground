@@ -5,20 +5,18 @@ import json
 import pickle
 
 import torch
-import torch.nn as nn
 
 from tfs_utils.core import (
-    TransformerBlock,
     build_token_id_to_index,
     encode_pre_tokens_to_indices,
     iter_pre_tokens,
     make_bpe_encoder,
     next_token_logits,
-    positional_encoding,
     sample_next_token,
     target_variants,
     token_to_cli,
 )
+from tfs_utils.model_factory import build_model, resolve_arch_config
 
 HERE = Path(__file__).resolve().parent
 MODELS_DIR = HERE / "models"
@@ -381,20 +379,13 @@ def main():
     token_id_to_index, token_str_to_index = build_token_id_to_index(vocab, index_to_token)
 
     V = len(index_to_token)
-    d_model = int(ckpt["d_model"])
-    num_heads = int(ckpt["num_heads"])
-    num_blocks = int(ckpt["num_blocks"])
-    d_ff = int(ckpt["d_ff"])
-    dropout = float(ckpt["dropout"])
-    seq_len = int(ckpt["seq_len"])
+    arch = resolve_arch_config(ckpt)
+    d_model, num_heads, num_blocks, d_ff = arch.d_model, arch.num_heads, arch.num_blocks, arch.d_ff
+    dropout = arch.dropout
+    seq_len = arch.seq_len
 
-    E = nn.Embedding(V, d_model).to(device)
-    final_lay_norm = nn.LayerNorm(d_model).to(device)
-    model = nn.Sequential(*[TransformerBlock(d_model, d_ff, num_heads, dropout) for _ in range(num_blocks)]).to(
-        device
-    )
-    U = nn.Linear(d_model, V, bias=False).to(device)
-    U.weight = E.weight
+    bundle = build_model(arch, V, device)
+    E, model, final_lay_norm, U = bundle.E, bundle.model, bundle.final_lay_norm, bundle.U
 
     E.load_state_dict(ckpt["E_state_dict"])
     model.load_state_dict(ckpt["model_state_dict"])
@@ -405,7 +396,7 @@ def main():
     final_lay_norm.eval()
     U.eval()
 
-    pe = positional_encoding(seq_len, d_model, device=device)
+    pe = bundle.pe
 
     if args.live:
         run_live_loop(

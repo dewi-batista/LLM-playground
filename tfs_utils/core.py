@@ -3,8 +3,11 @@ from itertools import pairwise
 import re
 
 import torch
-import torch.nn as nn
-import torch.nn.functional as F
+
+from tfs_utils.components.block import TransformerBlock  # noqa: F401 (backward-compat re-export)
+from tfs_utils.components.positional import (  # noqa: F401 (backward-compat re-export)
+    sinusoidal_positional_encoding as positional_encoding,
+)
 
 PUNCT_SUFFIXES = [",", ".", ":", ";", "!", "?"]
 PUNCT_PREFIXES = ["-"]
@@ -59,55 +62,6 @@ def make_bpe_encoder(encodings, cache: bool = True):
         return ids
 
     return encode
-
-
-def positional_encoding(seq_len: int, d_model: int, device: torch.device):
-    pos = torch.arange(seq_len, device=device, dtype=torch.float32).unsqueeze(1)  # (T, 1)
-    i = torch.arange(d_model, device=device, dtype=torch.float32)  # (d,)
-    div = torch.pow(10_000.0, (2 * (i // 2)) / d_model)
-    angles = pos / div
-
-    pe = torch.zeros_like(angles)
-    pe[:, 0::2] = torch.sin(angles[:, 0::2])
-    pe[:, 1::2] = torch.cos(angles[:, 1::2])
-    return pe
-
-
-class TransformerBlock(nn.Module):
-    def __init__(self, d_model: int, d_ff: int, num_heads: int, dropout: float):
-        super().__init__()
-        assert d_model % num_heads == 0
-        self.num_heads = num_heads
-        self.d_head = d_model // num_heads
-
-        self.W_QKV = nn.Linear(d_model, 3 * d_model)
-        self.W_O = nn.Linear(d_model, d_model)
-
-        self.W_1 = nn.Linear(d_model, d_ff)
-        self.W_2 = nn.Linear(d_ff, d_model)
-
-        self.ln1 = nn.LayerNorm(d_model)
-        self.ln2 = nn.LayerNorm(d_model)
-
-        self.dropout_attn = nn.Dropout(dropout)
-        self.dropout_ffn = nn.Dropout(dropout)
-        self.act = nn.GELU()
-
-    def forward(self, X):
-        B, T, _ = X.shape
-        H = self.ln1(X)
-        Q, K, V = self.W_QKV(H).chunk(3, dim=-1)
-        Q = Q.reshape(B, T, self.num_heads, self.d_head).transpose(1, 2)
-        K = K.reshape(B, T, self.num_heads, self.d_head).transpose(1, 2)
-        V = V.reshape(B, T, self.num_heads, self.d_head).transpose(1, 2)
-
-        O = F.scaled_dot_product_attention(Q, K, V, is_causal=True)
-        O = O.transpose(1, 2).reshape(B, T, self.num_heads * self.d_head)
-        X = X + self.dropout_attn(self.W_O(O))
-
-        H = self.ln2(X)
-        X = X + self.dropout_ffn(self.W_2(self.act(self.W_1(H))))
-        return X
 
 
 def token_to_cli(token: str) -> str:

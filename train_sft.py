@@ -1,7 +1,8 @@
 # NOTE: This is written assuming that a CUDA device is available.
 # NOTE: Most of this code is copy-pasted from train_transformer.py.
 
-from tfs_utils.core import TransformerBlock, build_token_id_to_index, iter_pre_tokens, make_bpe_encoder, positional_encoding
+from tfs_utils.core import build_token_id_to_index, iter_pre_tokens, make_bpe_encoder
+from tfs_utils.model_factory import arch_to_ckpt_fields, build_model, collect_aux_loss, resolve_arch_config
 from tfs_utils.metrics import append_metrics_row, atomic_text_save, write_val_ppl_svg
 from tfs_utils.checkpointing import atomic_torch_save
 from torch.utils.checkpoint import checkpoint
@@ -130,9 +131,8 @@ token_id_to_index, _token_str_to_index = build_token_id_to_index(vocab, index_to
 token_id_to_index = token_id_to_index.numpy()
 
 V = len(index_to_token)
-num_heads = int(base_ckpt["num_heads"])
-num_blocks = int(base_ckpt["num_blocks"])
-d_ff = int(base_ckpt["d_ff"])
+arch = resolve_arch_config(base_ckpt, overrides={"seq_len": seq_len, "dropout": dropout})
+num_heads, num_blocks, d_ff = arch.num_heads, arch.num_blocks, arch.d_ff
 tqdm.write(f"arch: V={V}, d_model={d_model}, blocks={num_blocks}, heads={num_heads}, seq_len={seq_len}")
 
 def encode_with_mask(prompt_text: str, full_text: str):
@@ -206,13 +206,8 @@ tqdm.write(f"\ntrain_tokens: {int(train_tokens):_}\ntokens_per_step: {tokens_per
 
 # the model begins...
 dropout_embed = nn.Dropout(dropout).to(device)
-E = nn.Embedding(V, d_model).to(device)
-final_lay_norm = nn.LayerNorm(d_model).to(device)
-model = nn.Sequential(*[TransformerBlock(d_model, d_ff, num_heads, dropout) for _ in range(num_blocks)]).to(device)
-U = nn.Linear(d_model, V, bias=False).to(device)
-
-# weight tying
-U.weight = E.weight
+bundle = build_model(arch, V, device)
+E, model, final_lay_norm, U = bundle.E, bundle.model, bundle.final_lay_norm, bundle.U
 
 E.load_state_dict(base_ckpt["E_state_dict"])
 model.load_state_dict(base_ckpt["model_state_dict"])
@@ -289,7 +284,7 @@ def eval_nll(token_ids, token_mask, desc):
 if (not grad_checkpoint) and grad_accum_steps == 1:
     model = torch.compile(model, mode="reduce-overhead")
 offsets = np.arange(seq_len, dtype=np.int64)
-pos_embedding = positional_encoding(seq_len, d_model, device=device)
+pos_embedding = bundle.pe
 
 def run_model(X):
     if (not grad_checkpoint) or (not torch.is_grad_enabled()):
@@ -317,7 +312,10 @@ for step in pbar:
     optimizer.zero_grad()
 
     for _ in range(grad_accum_steps):
-        loss = batch_loss(train_ids, train_mask)
+        # aux_loss is 0.0 for non-MoE configs; batch_loss (used by eval_nll too,
+        # for reported val_ppl) stays pure cross-entropy -- only the backpropped
+        # loss here gets the aux regularizer added.
+        loss = batch_loss(train_ids, train_mask) + arch.aux_loss_weight * collect_aux_loss(bundle.model)
         (loss / grad_accum_steps).backward()
     torch.nn.utils.clip_grad_norm_(params, grad_clip)
     optimizer.step()
@@ -355,10 +353,7 @@ for step in pbar:
                 "vocab_size": V,
                 "min_count": int(base_ckpt.get("min_count", 0)),
                 "index_to_token": index_to_token,
-                "d_model": d_model,
-                "num_heads": num_heads,
-                "num_blocks": num_blocks,
-                "d_ff": d_ff,
+                **arch_to_ckpt_fields(arch),
                 "seq_len": seq_len,
                 "batch_size": batch_size,
                 "dropout": dropout,
