@@ -2,7 +2,7 @@
 # NOTE: Most of this code is copy-pasted from train_transformer.py.
 
 from tfs_utils.core import build_token_id_to_index, iter_pre_tokens, make_bpe_encoder
-from tfs_utils.model_factory import arch_to_ckpt_fields, build_model, collect_aux_loss, resolve_arch_config
+from tfs_utils.model_factory import arch_to_ckpt_fields, build_model, resolve_arch_config
 from tfs_utils.metrics import append_metrics_row, atomic_text_save, write_val_ppl_svg
 from tfs_utils.checkpointing import atomic_torch_save
 from torch.utils.checkpoint import checkpoint
@@ -312,10 +312,7 @@ for step in pbar:
     optimizer.zero_grad()
 
     for _ in range(grad_accum_steps):
-        # aux_loss is 0.0 for non-MoE configs; batch_loss (used by eval_nll too,
-        # for reported val_ppl) stays pure cross-entropy -- only the backpropped
-        # loss here gets the aux regularizer added.
-        loss = batch_loss(train_ids, train_mask) + arch.aux_loss_weight * collect_aux_loss(bundle.model)
+        loss = batch_loss(train_ids, train_mask)
         (loss / grad_accum_steps).backward()
     torch.nn.utils.clip_grad_norm_(params, grad_clip)
     optimizer.step()

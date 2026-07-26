@@ -16,28 +16,16 @@ class TransformerBlock(nn.Module):
         norm: str = "layernorm",
         attn: str = "mha",
         mlp: str = "gelu_mlp",
-        num_kv_heads: int | None = None,
-        window_size: int | None = None,
-        layer_idx: int | None = None,
-        num_experts: int = 1,
-        top_k: int = 1,
     ):
         super().__init__()
         assert d_model % num_heads == 0
         self.num_heads = num_heads
         self.d_head = d_model // num_heads
-        self.layer_idx = layer_idx
-        self.top_k = top_k
-        self._last_aux_loss = None  # set by an MoE mlp_forward; stays None otherwise
 
         attn_spec = ATTENTIONS[attn]
-        attn_params = attn_spec["build_params"](
-            d_model=d_model, num_heads=num_heads, num_kv_heads=num_kv_heads,
-        )
+        attn_params = attn_spec["build_params"](d_model=d_model, num_heads=num_heads)
         mlp_spec = MLPS[mlp]
-        mlp_params = mlp_spec["build_params"](
-            d_model=d_model, d_ff=d_ff, num_experts=num_experts, top_k=top_k,
-        )
+        mlp_params = mlp_spec["build_params"](d_model, d_ff)
 
         # Assignment order below matches the pre-refactor TransformerBlock exactly
         # (attn params, mlp params, norms, dropouts, "act" last) so that
@@ -48,10 +36,7 @@ class TransformerBlock(nn.Module):
         for name, module in attn_params.items():
             setattr(self, name, module)
         if "build_buffers" in attn_spec:
-            bufs = attn_spec["build_buffers"](
-                d_model=d_model, num_heads=num_heads, seq_len=seq_len,
-                num_kv_heads=num_kv_heads, window_size=window_size, layer_idx=layer_idx,
-            )
+            bufs = attn_spec["build_buffers"](d_model=d_model, num_heads=num_heads, seq_len=seq_len)
             for name, buf in bufs.items():
                 self.register_buffer(name, buf, persistent=False)
         for name, module in mlp_params.items():

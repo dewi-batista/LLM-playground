@@ -13,14 +13,6 @@ def sinusoidal_positional_encoding(seq_len: int, d_model: int, device: torch.dev
     return pe
 
 
-def none_positional_encoding(seq_len: int, d_model: int, device: torch.device):
-    # For use with attention variants that encode position internally (e.g.
-    # RoPE) -- an all-zeros PE makes the E(x) + pe[:T] add at each call site
-    # a no-op without needing to special-case those call sites.
-    return torch.zeros(seq_len, d_model, device=device)
-
-
 POS_ENCODINGS = {
     "sinusoidal": sinusoidal_positional_encoding,
-    "none": none_positional_encoding,
 }

@@ -2,7 +2,7 @@
 
 from cache_tokenisation import load_or_create_token_ids
 from torch.utils.checkpoint import checkpoint
-from tfs_utils.model_factory import arch_to_ckpt_fields, build_model, collect_aux_loss, init_weights, resolve_arch_config
+from tfs_utils.model_factory import arch_to_ckpt_fields, build_model, init_weights, resolve_arch_config
 from tfs_utils.metrics import append_metrics_row, atomic_text_save, write_val_ppl_svg
 from tfs_utils.checkpointing import atomic_torch_save
 
@@ -278,13 +278,7 @@ for step in pbar:
         with torch.autocast(device_type=device.type, dtype=amp_dtype, enabled=amp_enabled):
             X = dropout_embed(E(context_window) + pos_embedding)
             logits = U(final_lay_norm(run_model(X)))
-            ce_loss = F.cross_entropy(logits.reshape(-1, V), targets.reshape(-1))
-            # aux_loss is 0.0 for non-MoE configs (collect_aux_loss finds no
-            # blocks with _last_aux_loss set); the reported/logged loss below
-            # stays pure cross-entropy either way -- aux_loss is a training-time
-            # regularizer, not part of the reported perplexity.
-            aux_loss = collect_aux_loss(bundle.model)
-            loss = ce_loss + arch.aux_loss_weight * aux_loss
+            loss = F.cross_entropy(logits.reshape(-1, V), targets.reshape(-1))
         (loss / grad_accum_steps).backward()
     torch.nn.utils.clip_grad_norm_(params, grad_clip)
     optimizer.step()
